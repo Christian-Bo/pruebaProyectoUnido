@@ -29,7 +29,6 @@ public class FacialAuthController : ControllerBase
     /// <summary>
     /// Registra una codificación facial para el usuario autenticado.
     /// </summary>
-    [Authorize]
     [HttpPost("register")]
     public async Task<IActionResult> RegisterFacial([FromBody] RegisterFacialRequest dto)
     {

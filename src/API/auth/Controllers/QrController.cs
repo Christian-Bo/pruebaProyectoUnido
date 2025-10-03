@@ -31,7 +31,6 @@ public class QrController : ControllerBase
     }
 
     // Envía el carnet con QR al email del usuario
-    [Authorize] // quítalo si lo vas a llamar sin token
     [HttpPost("send-card")]
     public async Task<IActionResult> SendCard([FromBody] QrSendRequest dto)
     {
