@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "dgSpecHash": "WRcotaiap1s=",
+  "dgSpecHash": "BiiZNeOSdPs=",
   "success": true,
-  "projectFilePath": "C:\\Users\\Christian\\Desktop\\backend\\src\\Infrastructure\\lexico\\Lexico.Infrastructure.csproj",
+  "projectFilePath": "C:\\Users\\Christian\\Desktop\\backend - copia\\src\\Infrastructure\\lexico\\Lexico.Infrastructure.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\Christian\\.nuget\\packages\\dapper\\2.1.66\\dapper.2.1.66.nupkg.sha512",
     "C:\\Users\\Christian\\.nuget\\packages\\microsoft.extensions.configuration.abstractions\\9.0.9\\microsoft.extensions.configuration.abstractions.9.0.9.nupkg.sha512",

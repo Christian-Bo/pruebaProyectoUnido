@@ -13,11 +13,11 @@
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "C:\\Users\\Christian\\Desktop\\backend\\src\\Domain\\lexico\\Lexico.Domain.csproj",
+      "projectUniqueName": "C:\\Users\\Christian\\Desktop\\backend - copia\\src\\Domain\\lexico\\Lexico.Domain.csproj",
       "projectName": "Lexico.Domain",
-      "projectPath": "C:\\Users\\Christian\\Desktop\\backend\\src\\Domain\\lexico\\Lexico.Domain.csproj",
+      "projectPath": "C:\\Users\\Christian\\Desktop\\backend - copia\\src\\Domain\\lexico\\Lexico.Domain.csproj",
       "packagesPath": "C:\\Users\\Christian\\.nuget\\packages\\",
-      "outputPath": "C:\\Users\\Christian\\Desktop\\backend\\src\\Domain\\lexico\\obj\\",
+      "outputPath": "C:\\Users\\Christian\\Desktop\\backend - copia\\src\\Domain\\lexico\\obj\\",
       "projectStyle": "PackageReference",
       "configFilePaths": [
         "C:\\Users\\Christian\\AppData\\Roaming\\NuGet\\NuGet.Config"

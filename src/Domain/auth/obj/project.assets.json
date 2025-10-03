@@ -563,11 +563,11 @@
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "C:\\Users\\Christian\\Desktop\\backend\\src\\Domain\\auth\\Auth.Domain.csproj",
+      "projectUniqueName": "C:\\Users\\Christian\\Desktop\\backend - copia\\src\\Domain\\auth\\Auth.Domain.csproj",
       "projectName": "Auth.Domain",
-      "projectPath": "C:\\Users\\Christian\\Desktop\\backend\\src\\Domain\\auth\\Auth.Domain.csproj",
+      "projectPath": "C:\\Users\\Christian\\Desktop\\backend - copia\\src\\Domain\\auth\\Auth.Domain.csproj",
       "packagesPath": "C:\\Users\\Christian\\.nuget\\packages\\",
-      "outputPath": "C:\\Users\\Christian\\Desktop\\backend\\src\\Domain\\auth\\obj\\",
+      "outputPath": "C:\\Users\\Christian\\Desktop\\backend - copia\\src\\Domain\\auth\\obj\\",
       "projectStyle": "PackageReference",
       "configFilePaths": [
         "C:\\Users\\Christian\\AppData\\Roaming\\NuGet\\NuGet.Config"

@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "dgSpecHash": "3qSXGhAn8Go=",
+  "dgSpecHash": "cQxBeFH2Byo=",
   "success": true,
-  "projectFilePath": "C:\\Users\\Christian\\Desktop\\backend\\src\\Application\\auth\\Auth.Application.csproj",
+  "projectFilePath": "C:\\Users\\Christian\\Desktop\\backend - copia\\src\\Application\\auth\\Auth.Application.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\Christian\\.nuget\\packages\\microsoft.entityframeworkcore\\8.0.0\\microsoft.entityframeworkcore.8.0.0.nupkg.sha512",
     "C:\\Users\\Christian\\.nuget\\packages\\microsoft.entityframeworkcore.abstractions\\8.0.0\\microsoft.entityframeworkcore.abstractions.8.0.0.nupkg.sha512",

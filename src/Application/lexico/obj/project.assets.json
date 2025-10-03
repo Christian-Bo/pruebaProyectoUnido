@@ -32,11 +32,11 @@
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "C:\\Users\\Christian\\Desktop\\backend\\src\\Application\\lexico\\Lexico.Application.csproj",
+      "projectUniqueName": "C:\\Users\\Christian\\Desktop\\backend - copia\\src\\Application\\lexico\\Lexico.Application.csproj",
       "projectName": "Lexico.Application",
-      "projectPath": "C:\\Users\\Christian\\Desktop\\backend\\src\\Application\\lexico\\Lexico.Application.csproj",
+      "projectPath": "C:\\Users\\Christian\\Desktop\\backend - copia\\src\\Application\\lexico\\Lexico.Application.csproj",
       "packagesPath": "C:\\Users\\Christian\\.nuget\\packages\\",
-      "outputPath": "C:\\Users\\Christian\\Desktop\\backend\\src\\Application\\lexico\\obj\\",
+      "outputPath": "C:\\Users\\Christian\\Desktop\\backend - copia\\src\\Application\\lexico\\obj\\",
       "projectStyle": "PackageReference",
       "configFilePaths": [
         "C:\\Users\\Christian\\AppData\\Roaming\\NuGet\\NuGet.Config"
@@ -51,8 +51,8 @@
         "net8.0": {
           "targetAlias": "net8.0",
           "projectReferences": {
-            "C:\\Users\\Christian\\Desktop\\backend\\src\\Domain\\lexico\\Lexico.Domain.csproj": {
-              "projectPath": "C:\\Users\\Christian\\Desktop\\backend\\src\\Domain\\lexico\\Lexico.Domain.csproj"
+            "C:\\Users\\Christian\\Desktop\\backend - copia\\src\\Domain\\lexico\\Lexico.Domain.csproj": {
+              "projectPath": "C:\\Users\\Christian\\Desktop\\backend - copia\\src\\Domain\\lexico\\Lexico.Domain.csproj"
             }
           }
         }

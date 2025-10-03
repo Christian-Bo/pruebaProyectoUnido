@@ -11,3 +11,16 @@ C:\Users\Christian\Desktop\backend\src\Domain\auth\obj\Debug\net8.0\Auth.Domain.
 C:\Users\Christian\Desktop\backend\src\Domain\auth\obj\Debug\net8.0\refint\Auth.Domain.dll
 C:\Users\Christian\Desktop\backend\src\Domain\auth\obj\Debug\net8.0\Auth.Domain.pdb
 C:\Users\Christian\Desktop\backend\src\Domain\auth\obj\Debug\net8.0\ref\Auth.Domain.dll
+C:\Users\Christian\Desktop\backend - copia\src\Domain\auth\bin\Debug\net8.0\Auth.Domain.deps.json
+C:\Users\Christian\Desktop\backend - copia\src\Domain\auth\bin\Debug\net8.0\Auth.Domain.dll
+C:\Users\Christian\Desktop\backend - copia\src\Domain\auth\bin\Debug\net8.0\Auth.Domain.pdb
+C:\Users\Christian\Desktop\backend - copia\src\Domain\auth\obj\Debug\net8.0\Auth.Domain.csproj.AssemblyReference.cache
+C:\Users\Christian\Desktop\backend - copia\src\Domain\auth\obj\Debug\net8.0\Auth.Domain.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\Christian\Desktop\backend - copia\src\Domain\auth\obj\Debug\net8.0\Auth.Domain.AssemblyInfoInputs.cache
+C:\Users\Christian\Desktop\backend - copia\src\Domain\auth\obj\Debug\net8.0\Auth.Domain.AssemblyInfo.cs
+C:\Users\Christian\Desktop\backend - copia\src\Domain\auth\obj\Debug\net8.0\Auth.Domain.csproj.CoreCompileInputs.cache
+C:\Users\Christian\Desktop\backend - copia\src\Domain\auth\obj\Debug\net8.0\Auth.Domain.sourcelink.json
+C:\Users\Christian\Desktop\backend - copia\src\Domain\auth\obj\Debug\net8.0\Auth.Domain.dll
+C:\Users\Christian\Desktop\backend - copia\src\Domain\auth\obj\Debug\net8.0\refint\Auth.Domain.dll
+C:\Users\Christian\Desktop\backend - copia\src\Domain\auth\obj\Debug\net8.0\Auth.Domain.pdb
+C:\Users\Christian\Desktop\backend - copia\src\Domain\auth\obj\Debug\net8.0\ref\Auth.Domain.dll

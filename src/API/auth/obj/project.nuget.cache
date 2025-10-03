@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "dgSpecHash": "KhXL8MtRDPc=",
+  "dgSpecHash": "p122Hh+TS9A=",
   "success": true,
-  "projectFilePath": "C:\\Users\\Christian\\Desktop\\backend\\src\\API\\auth\\Auth.API.csproj",
+  "projectFilePath": "C:\\Users\\Christian\\Desktop\\backend - copia\\src\\API\\auth\\Auth.API.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\Christian\\.nuget\\packages\\bcrypt.net-next\\4.0.3\\bcrypt.net-next.4.0.3.nupkg.sha512",
     "C:\\Users\\Christian\\.nuget\\packages\\bouncycastle.cryptography\\2.6.1\\bouncycastle.cryptography.2.6.1.nupkg.sha512",
