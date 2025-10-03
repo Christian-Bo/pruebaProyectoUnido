@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="8.0.20" />
+    <PackageReference Include="Swashbuckle.AspNetCore" Version="9.0.5" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Application\lexico\Lexico.Application.csproj" />
+    <ProjectReference Include="..\..\Infrastructure\lexico\Lexico.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\Domain\lexico\Lexico.Domain.csproj" />
+  </ItemGroup>
+
+
+</Project>

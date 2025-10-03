@@ -1,0 +1,207 @@
+{
+  "format": 1,
+  "restore": {
+    "C:\\Users\\Christian\\Desktop\\backend\\src\\Infrastructure\\lexico\\Lexico.Infrastructure.csproj": {}
+  },
+  "projects": {
+    "C:\\Users\\Christian\\Desktop\\backend\\src\\Application\\lexico\\Lexico.Application.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "C:\\Users\\Christian\\Desktop\\backend\\src\\Application\\lexico\\Lexico.Application.csproj",
+        "projectName": "Lexico.Application",
+        "projectPath": "C:\\Users\\Christian\\Desktop\\backend\\src\\Application\\lexico\\Lexico.Application.csproj",
+        "packagesPath": "C:\\Users\\Christian\\.nuget\\packages\\",
+        "outputPath": "C:\\Users\\Christian\\Desktop\\backend\\src\\Application\\lexico\\obj\\",
+        "projectStyle": "PackageReference",
+        "configFilePaths": [
+          "C:\\Users\\Christian\\AppData\\Roaming\\NuGet\\NuGet.Config"
+        ],
+        "originalTargetFrameworks": [
+          "net8.0"
+        ],
+        "sources": {
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "net8.0": {
+            "targetAlias": "net8.0",
+            "projectReferences": {
+              "C:\\Users\\Christian\\Desktop\\backend\\src\\Domain\\lexico\\Lexico.Domain.csproj": {
+                "projectPath": "C:\\Users\\Christian\\Desktop\\backend\\src\\Domain\\lexico\\Lexico.Domain.csproj"
+              }
+            }
+          }
+        },
+        "warningProperties": {
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        }
+      },
+      "frameworks": {
+        "net8.0": {
+          "targetAlias": "net8.0",
+          "imports": [
+            "net461",
+            "net462",
+            "net47",
+            "net471",
+            "net472",
+            "net48",
+            "net481"
+          ],
+          "assetTargetFallback": true,
+          "warn": true,
+          "frameworkReferences": {
+            "Microsoft.NETCore.App": {
+              "privateAssets": "all"
+            }
+          },
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\8.0.414/PortableRuntimeIdentifierGraph.json"
+        }
+      }
+    },
+    "C:\\Users\\Christian\\Desktop\\backend\\src\\Domain\\lexico\\Lexico.Domain.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "C:\\Users\\Christian\\Desktop\\backend\\src\\Domain\\lexico\\Lexico.Domain.csproj",
+        "projectName": "Lexico.Domain",
+        "projectPath": "C:\\Users\\Christian\\Desktop\\backend\\src\\Domain\\lexico\\Lexico.Domain.csproj",
+        "packagesPath": "C:\\Users\\Christian\\.nuget\\packages\\",
+        "outputPath": "C:\\Users\\Christian\\Desktop\\backend\\src\\Domain\\lexico\\obj\\",
+        "projectStyle": "PackageReference",
+        "configFilePaths": [
+          "C:\\Users\\Christian\\AppData\\Roaming\\NuGet\\NuGet.Config"
+        ],
+        "originalTargetFrameworks": [
+          "net8.0"
+        ],
+        "sources": {
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "net8.0": {
+            "targetAlias": "net8.0",
+            "projectReferences": {}
+          }
+        },
+        "warningProperties": {
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        }
+      },
+      "frameworks": {
+        "net8.0": {
+          "targetAlias": "net8.0",
+          "imports": [
+            "net461",
+            "net462",
+            "net47",
+            "net471",
+            "net472",
+            "net48",
+            "net481"
+          ],
+          "assetTargetFallback": true,
+          "warn": true,
+          "frameworkReferences": {
+            "Microsoft.NETCore.App": {
+              "privateAssets": "all"
+            }
+          },
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\8.0.414/PortableRuntimeIdentifierGraph.json"
+        }
+      }
+    },
+    "C:\\Users\\Christian\\Desktop\\backend\\src\\Infrastructure\\lexico\\Lexico.Infrastructure.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "C:\\Users\\Christian\\Desktop\\backend\\src\\Infrastructure\\lexico\\Lexico.Infrastructure.csproj",
+        "projectName": "Lexico.Infrastructure",
+        "projectPath": "C:\\Users\\Christian\\Desktop\\backend\\src\\Infrastructure\\lexico\\Lexico.Infrastructure.csproj",
+        "packagesPath": "C:\\Users\\Christian\\.nuget\\packages\\",
+        "outputPath": "C:\\Users\\Christian\\Desktop\\backend\\src\\Infrastructure\\lexico\\obj\\",
+        "projectStyle": "PackageReference",
+        "configFilePaths": [
+          "C:\\Users\\Christian\\AppData\\Roaming\\NuGet\\NuGet.Config"
+        ],
+        "originalTargetFrameworks": [
+          "net8.0"
+        ],
+        "sources": {
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "net8.0": {
+            "targetAlias": "net8.0",
+            "projectReferences": {
+              "C:\\Users\\Christian\\Desktop\\backend\\src\\Application\\lexico\\Lexico.Application.csproj": {
+                "projectPath": "C:\\Users\\Christian\\Desktop\\backend\\src\\Application\\lexico\\Lexico.Application.csproj"
+              },
+              "C:\\Users\\Christian\\Desktop\\backend\\src\\Domain\\lexico\\Lexico.Domain.csproj": {
+                "projectPath": "C:\\Users\\Christian\\Desktop\\backend\\src\\Domain\\lexico\\Lexico.Domain.csproj"
+              }
+            }
+          }
+        },
+        "warningProperties": {
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        }
+      },
+      "frameworks": {
+        "net8.0": {
+          "targetAlias": "net8.0",
+          "dependencies": {
+            "Dapper": {
+              "target": "Package",
+              "version": "[2.1.66, )"
+            },
+            "Microsoft.Extensions.Configuration.Abstractions": {
+              "target": "Package",
+              "version": "[9.0.9, )"
+            },
+            "MySqlConnector": {
+              "target": "Package",
+              "version": "[2.4.0, )"
+            }
+          },
+          "imports": [
+            "net461",
+            "net462",
+            "net47",
+            "net471",
+            "net472",
+            "net48",
+            "net481"
+          ],
+          "assetTargetFallback": true,
+          "warn": true,
+          "frameworkReferences": {
+            "Microsoft.NETCore.App": {
+              "privateAssets": "all"
+            }
+          },
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\8.0.414/PortableRuntimeIdentifierGraph.json"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,15 @@
+# Ignorar artefactos y archivos innecesarios
+**/bin/
+**/obj/
+**/.vs/
+**/.idea/
+**/.vscode/
+**/*.user
+**/*.suo
+**/*.swp
+**/*.log
+**/*.tmp
+**/*.DS_Store
+
+.git
+*.zip
