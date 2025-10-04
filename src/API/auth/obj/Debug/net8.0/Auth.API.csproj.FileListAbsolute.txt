@@ -202,3 +202,6 @@ C:\Users\Christian\Desktop\backend - copia\src\API\auth\obj\Debug\net8.0\refint\
 C:\Users\Christian\Desktop\backend - copia\src\API\auth\obj\Debug\net8.0\Auth.API.pdb
 C:\Users\Christian\Desktop\backend - copia\src\API\auth\obj\Debug\net8.0\Auth.API.genruntimeconfig.cache
 C:\Users\Christian\Desktop\backend - copia\src\API\auth\obj\Debug\net8.0\ref\Auth.API.dll
+C:\Users\Christian\Desktop\backend - copia\src\API\auth\bin\Debug\net8.0\Newtonsoft.Json.dll
+C:\Users\Christian\Desktop\backend - copia\src\API\auth\bin\Debug\net8.0\SendGrid.dll
+C:\Users\Christian\Desktop\backend - copia\src\API\auth\bin\Debug\net8.0\StarkbankEcdsa.dll
