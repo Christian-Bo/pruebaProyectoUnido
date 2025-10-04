@@ -69,7 +69,14 @@ builder.Services.AddScoped<IAuthService, AuthService>();
 // Opciones y servicios extra (correo, facial, QR)
 builder.Services.Configure<EmailOptions>(builder.Configuration.GetSection("Email"));
 builder.Services.Configure<FacialOptions>(builder.Configuration.GetSection("Facial"));
-builder.Services.AddScoped<INotificationService, SmtpEmailNotificationService>();
+if (builder.Environment.IsDevelopment())
+{
+    builder.Services.AddScoped<INotificationService, SmtpEmailNotificationService>();
+}
+else
+{
+    builder.Services.AddScoped<INotificationService, SendGridEmailNotificationService>();
+}
 builder.Services.AddScoped<IFacialAuthService, FacialAuthService>();
 builder.Services.AddScoped<IQrService, QrService>();
 builder.Services.AddScoped<IQrCardGenerator, QrCardGenerator>();

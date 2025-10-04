@@ -35,7 +35,6 @@ public class AuthService : IAuthService
     // RegisterAsync valida duplicados, hashea con BCrypt, envía carnet con QR y hace login automático
     public async Task<AuthResponse> RegisterAsync(RegisterRequest dto)
     {
-        // Validaciones básicas
         if (await _db.Usuarios.AnyAsync(u => u.UsuarioNombre == dto.Usuario || u.Email == dto.Email))
             throw new InvalidOperationException("Usuario o email ya existen.");
 
@@ -43,26 +42,35 @@ public class AuthService : IAuthService
 
         var user = new Usuario
         {
-            UsuarioNombre = dto.Usuario,
-            Email = dto.Email,
+            UsuarioNombre  = dto.Usuario,
+            Email          = dto.Email,
             NombreCompleto = dto.NombreCompleto,
-            PasswordHash = hash,
-            Telefono = dto.Telefono,
-            Activo = true
+            PasswordHash   = hash,
+            Telefono       = dto.Telefono,
+            Activo         = true
         };
+
+        await using var tx = await _db.Database.BeginTransactionAsync();
 
         _db.Usuarios.Add(user);
         await _db.SaveChangesAsync();
 
-        // ⬇️ Generar/obtener QR, crear PDF del carnet y enviarlo por correo (no romper registro si falla)
+        // Garantiza que tenemos Id > 0
+        if (user.Id <= 0)
+        {
+            await _db.Entry(user).ReloadAsync();
+            if (user.Id <= 0) throw new InvalidOperationException("No se pudo obtener el Id del usuario insertado.");
+        }
+
+        // Email con carnet QR (no romper si falla SMTP)
         try
         {
-            var qr = await _qr.GetOrCreateUserQrAsync(user.Id);
+            var qr  = await _qr.GetOrCreateUserQrAsync(user.Id);
             var pdf = _card.CreateCardPdf(user.NombreCompleto, user.UsuarioNombre, user.Email, qr.Codigo);
 
             var bodyHtml = $@"
                 <p>Hola <b>{user.NombreCompleto}</b>,</p>
-                <p>Adjuntamos tu <b>carnet de acceso con código QR</b>. Guárdalo y preséntalo cuando se te solicite.</p>
+                <p>Adjuntamos tu <b>carnet de acceso con código QR</b>.</p>
                 <p>Si no solicitaste este registro, contacta a soporte.</p>";
 
             await _notify.SendEmailAsync(
@@ -72,15 +80,14 @@ public class AuthService : IAuthService
                 ("carnet_qr.pdf", pdf, "application/pdf")
             );
         }
-        catch
-        {
-            // Puedes loguear con ILogger<AuthService> si deseas
-        }
+        catch { /* log opcional */ }
 
-        // Login automático
-        return await LoginInternalAsync(user, MetodoLogin.password);
+        var resp = await LoginInternalAsync(user, MetodoLogin.password);
+
+        await tx.CommitAsync();
+        return resp;
     }
-
+    
     // Búsqueda por usuario/email, verificación BCrypt y login
     public async Task<AuthResponse> LoginAsync(LoginRequest dto)
     {
