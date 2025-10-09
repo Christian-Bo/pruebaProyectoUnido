@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using System.Text.Json;
 using Microsoft.Extensions.Configuration;
 
 namespace Auth.Infrastructure.auth.Services
@@ -9,12 +10,11 @@ namespace Auth.Infrastructure.auth.Services
 
         public BiometricApiClient(HttpClient http, IConfiguration cfg)
         {
+            // BaseAddress y Timeout ya vienen configurados desde Program.cs (AddHttpClient)
             _http = http;
-            _http.BaseAddress = new Uri(cfg["ExternalBiometricApi:BaseUrl"]!);
-            _http.Timeout = TimeSpan.FromSeconds(
-                int.TryParse(cfg["ExternalBiometricApi:TimeoutSeconds"], out var t) ? t : 20);
         }
 
+        // ===================== Verificar =====================
         private sealed class VerifyRequest
         {
             public string RostroA { get; set; } = string.Empty;
@@ -39,44 +39,41 @@ namespace Auth.Infrastructure.auth.Services
             var raw = await res.Content.ReadAsStringAsync(ct);
             if (!res.IsSuccessStatusCode) return (false, null, raw);
 
-            var data = System.Text.Json.JsonSerializer.Deserialize<VerifyResponse>(raw,
-                new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            var data = JsonSerializer.Deserialize<VerifyResponse>(raw,
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
 
             var match = data?.IsMatch ?? data?.Success ?? data?.exito ?? false;
             return (match, data?.score, raw);
         }
 
+        // ===================== Segmentar (AJUSTADO) =====================
         private sealed class SegmentRequest
         {
-            public string Rostro { get; set; } = string.Empty;
-        }
-        private sealed class SegmentResponse
-        {
-            // tolerante a diferentes nombres que pueda devolver la API
-            public string? RostroSegmentado { get; set; }
-            public string? Imagen { get; set; }
-            public string? Image { get; set; }
-            public bool? Success { get; set; }
-            public string? mensaje { get; set; }
-            public string? message { get; set; }
+            public string RostroA { get; set; } = string.Empty;
+            public string RostroB { get; set; } = string.Empty; // la colección usa vacío
         }
 
+        /// <summary>
+        /// La API externa devuelve: { resultado: bool, segmentado: bool, rostro: "<b64>" }
+        /// </summary>
         public async Task<(bool Success, string? Base64, string? Raw)>
             SegmentAsync(string rostroBase64, CancellationToken ct = default)
         {
-            var req = new SegmentRequest { Rostro = rostroBase64 };
+            var req = new SegmentRequest { RostroA = rostroBase64, RostroB = "" };
+
             using var res = await _http.PostAsJsonAsync("Rostro/Segmentar", req, ct);
             var raw = await res.Content.ReadAsStringAsync(ct);
             if (!res.IsSuccessStatusCode) return (false, null, raw);
 
-            var data = System.Text.Json.JsonSerializer.Deserialize<SegmentResponse>(raw,
-                new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            using var doc = JsonDocument.Parse(raw);
+            var root = doc.RootElement;
 
-            var ok = data?.Success ?? true; // varias APIs devuelven 200 sin flag
-            var base64 = data?.RostroSegmentado ?? data?.Imagen ?? data?.Image;
-            return (ok && !string.IsNullOrWhiteSpace(base64), base64, raw);
+            var ok = root.TryGetProperty("resultado", out var r) && r.GetBoolean()
+                     && root.TryGetProperty("segmentado", out var s) && s.GetBoolean();
+
+            string? b64 = root.TryGetProperty("rostro", out var face) ? face.GetString() : null;
+
+            return (ok && !string.IsNullOrWhiteSpace(b64), b64, raw);
         }
     }
 }
-    
-

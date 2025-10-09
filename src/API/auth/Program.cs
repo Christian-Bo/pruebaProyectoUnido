@@ -1,30 +1,37 @@
 using System.Text;
+using System.Net.Http.Headers;                 // <-- agregado
 
-using Auth.Application.Contracts;                 // IAuthService
-using Auth.Infrastructure.Data;                  // AppDbContext
-using Auth.Infrastructure.Services;              // AuthService, JwtTokenService, IQrService, QrService, IQrCardGenerator, QrCardGenerator
+using Auth.Application.Contracts;              // IAuthService
+using Auth.Infrastructure.Data;                // AppDbContext
+using Auth.Infrastructure.Services;            // AuthService, JwtTokenService, IQrService, QrService, IQrCardGenerator, QrCardGenerator
 using Auth.Infrastructure.Services.Notifications; // EmailOptions, INotificationService, SmtpEmailNotificationService
-using Auth.Infrastructure.auth.Services;
+using Auth.Infrastructure.auth.Services;       // BiometricApiClient
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
-using QuestPDF.Infrastructure; // Licencia QuestPDF
-
+using QuestPDF.Infrastructure;                 // Licencia QuestPDF
 
 // Licencia de QuestPDF (antes de construir la app)
 QuestPDF.Settings.License = LicenseType.Community;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// EF Core + MySQL
+// ================= CONFIG PROVIDERS =================
+// asegura que cargue appsettings (base + por ambiente) y variables de entorno
+builder.Configuration
+    .AddJsonFile("appsettings.json", optional: true, reloadOnChange: true)
+    .AddJsonFile($"appsettings.{builder.Environment.EnvironmentName}.json", optional: true, reloadOnChange: true)
+    .AddEnvironmentVariables();
+
+// ================= EF Core + MySQL =================
 builder.Services.AddDbContext<AppDbContext>(opts =>
 {
     var cs = builder.Configuration.GetConnectionString("Default")!;
     opts.UseMySql(cs, ServerVersion.AutoDetect(cs));
 });
 
-// JWT
+// ================= JWT =================
 builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection("Jwt"));
 var key = Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"]!);
 
@@ -51,6 +58,7 @@ builder.Services.AddAuthentication(o =>
 
 builder.Services.AddAuthorization();
 
+// ================= CORS =================
 builder.Services.AddCors(opt =>
 {
     opt.AddPolicy("dev", p => p
@@ -61,13 +69,13 @@ builder.Services.AddCors(opt =>
 });
 
 // ======= DI de servicios =======
-
 builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 
 // Opciones y servicios extra (correo, facial, QR)
 builder.Services.Configure<EmailOptions>(builder.Configuration.GetSection("Email"));
-builder.Services.Configure<FacialOptions>(builder.Configuration.GetSection("Facial"));
+builder.Services.Configure<FacialOptions>(builder.Configuration.GetSection("FaceLogin"));
+
 if (builder.Environment.IsDevelopment())
 {
     builder.Services.AddScoped<INotificationService, SmtpEmailNotificationService>();
@@ -76,13 +84,14 @@ else
 {
     builder.Services.AddScoped<INotificationService, SendGridEmailNotificationService>();
 }
+
 builder.Services.AddScoped<IFacialAuthService, FacialAuthService>();
 builder.Services.AddScoped<IQrService, QrService>();
 builder.Services.AddScoped<IQrCardGenerator, QrCardGenerator>();
 
 builder.Services.AddControllers();
 
-// Swagger
+// ================= Swagger =================
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
@@ -101,8 +110,27 @@ builder.Services.AddSwaggerGen(c =>
     c.AddSecurityRequirement(new OpenApiSecurityRequirement { { jwtSecurityScheme, Array.Empty<string>() } });
 });
 
+// ================= HttpClient Biometría (configurado) =================
+builder.Services.AddHttpClient<BiometricApiClient>((sp, c) =>
+{
+    var cfg = sp.GetRequiredService<IConfiguration>();
 
-builder.Services.AddHttpClient<BiometricApiClient>();
+    // Lee desde tu appsettings: ExternalApis:Biometria
+    var baseUrl = cfg["ExternalApis:Biometria:BaseUrl"];
+    if (string.IsNullOrWhiteSpace(baseUrl))
+        throw new InvalidOperationException("ExternalApis:Biometria:BaseUrl no está configurado.");
+
+    c.BaseAddress = new Uri(baseUrl);
+
+    // Respeta la clave 'TimeOutSeconds' (tal cual está escrita en tu appsettings)
+    var toutStr = cfg["ExternalApis:Biometria:TimeOutSeconds"];
+    c.Timeout = TimeSpan.FromSeconds(int.TryParse(toutStr, out var t) ? t : 20);
+
+    // Si en el futuro te dan un token externo:
+    // var bearer = cfg["ExternalApis:Biometria:BearerToken"];
+    // if (!string.IsNullOrWhiteSpace(bearer))
+    //     c.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", bearer);
+});
 
 var app = builder.Build();
 
