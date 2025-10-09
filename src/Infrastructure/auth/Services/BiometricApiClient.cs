@@ -22,14 +22,19 @@ namespace Auth.Infrastructure.auth.Services
             public string RostroB { get; set; } = string.Empty;
         }
 
+        // ACEPTA diferentes formas de la API externa
         private sealed class VerifyResponse
         {
-            public bool? Success { get; set; }
-            public bool? IsMatch { get; set; }
-            public bool? exito { get; set; }
-            public double? score { get; set; }
+            public bool? Success { get; set; }          // algunas APIs
+            public bool? IsMatch { get; set; }          // algunas APIs
+            public bool? exito { get; set; }            // variantes
+            public bool? coincide { get; set; }         // <- lo que recibimos ahora
+            public double? score { get; set; }          // numérico (si lo mandan como number)
+            public string? scoreStr { get; set; }       // soporte extra, por si viene como "score":"183"
             public string? mensaje { get; set; }
             public string? message { get; set; }
+            public string? status { get; set; }         // "Ok" a veces
+            public string? error { get; set; }
         }
 
         public async Task<(bool Match, double? Score, string? Raw)>
@@ -56,17 +61,54 @@ namespace Auth.Infrastructure.auth.Services
             VerifyResponse? data = null;
             try
             {
-                data = JsonSerializer.Deserialize<VerifyResponse>(raw, new JsonSerializerOptions
+                // Hacemos tolerante a `score` string:
+                var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+                using var doc = JsonDocument.Parse(raw);
+                var root = doc.RootElement;
+
+                data = new VerifyResponse
                 {
-                    PropertyNameCaseInsensitive = true
-                });
+                    Success  = root.TryGetProperty("Success", out var x1) && x1.ValueKind == JsonValueKind.True ? true :
+                               root.TryGetProperty("resultado", out var xr) && xr.ValueKind == JsonValueKind.True ? true :    // a veces "resultado": true
+                               (root.TryGetProperty("Success", out x1) && x1.ValueKind == JsonValueKind.False ? false : (bool?)null),
+                    IsMatch  = root.TryGetProperty("IsMatch", out var x2) && x2.ValueKind == JsonValueKind.True ? true :
+                               (root.TryGetProperty("IsMatch", out x2) && x2.ValueKind == JsonValueKind.False ? false : (bool?)null),
+                    exito    = root.TryGetProperty("exito", out var x3) && x3.ValueKind == JsonValueKind.True ? true :
+                               (root.TryGetProperty("exito", out x3) && x3.ValueKind == JsonValueKind.False ? false : (bool?)null),
+                    coincide = root.TryGetProperty("coincide", out var x4) && x4.ValueKind == JsonValueKind.True ? true :
+                               (root.TryGetProperty("coincide", out x4) && x4.ValueKind == JsonValueKind.False ? false : (bool?)null),
+                    status   = root.TryGetProperty("status", out var xs) && xs.ValueKind == JsonValueKind.String ? xs.GetString() : null,
+                    error    = root.TryGetProperty("error", out var xe) && xe.ValueKind == JsonValueKind.String ? xe.GetString() : null,
+                    mensaje  = root.TryGetProperty("mensaje", out var xm) && xm.ValueKind == JsonValueKind.String ? xm.GetString() : null,
+                    message  = root.TryGetProperty("message", out var xme) && xme.ValueKind == JsonValueKind.String ? xme.GetString() : null
+                };
+
+                // score: puede venir como número o string
+                if (root.TryGetProperty("score", out var sc))
+                {
+                    if (sc.ValueKind == JsonValueKind.Number)
+                        data.score = sc.GetDouble();
+                    else if (sc.ValueKind == JsonValueKind.String)
+                    {
+                        var s = sc.GetString();
+                        data.scoreStr = s;
+                        if (double.TryParse(s, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var d))
+                            data.score = d;
+                    }
+                }
             }
             catch (Exception ex)
             {
                 return (false, null, $"JSON deserialization error: {ex.Message}; RAW={head}");
             }
 
-            var match = data?.IsMatch ?? data?.Success ?? data?.exito ?? false;
+            // decimos que hay match si cualquiera de estas flags lo marca
+            var match = data?.IsMatch
+                        ?? data?.Success
+                        ?? data?.exito
+                        ?? data?.coincide
+                        ?? false;
+
             return (match, data?.score, raw);
         }
 
@@ -107,22 +149,14 @@ namespace Auth.Infrastructure.auth.Services
                 var root = doc.RootElement;
 
                 var ok =
-                    root.TryGetProperty("resultado", out var r) && r.ValueKind == JsonValueKind.True ||
-                    (root.TryGetProperty("resultado", out r) && r.ValueKind == JsonValueKind.False && r.GetBoolean()); // robustez por si cambia tipo
-
-                var segOk =
-                    root.TryGetProperty("segmentado", out var s) && s.ValueKind == JsonValueKind.True ||
-                    (root.TryGetProperty("segmentado", out s) && s.ValueKind == JsonValueKind.False && s.GetBoolean());
-
-                // Si ambas flags están presentes las usamos; si no, seguimos con la imagen.
-                var flagsOk = ok && segOk;
+                    (root.TryGetProperty("resultado", out var r) && r.ValueKind == JsonValueKind.True) &&
+                    (root.TryGetProperty("segmentado", out var s) && s.ValueKind == JsonValueKind.True);
 
                 string? b64 = root.TryGetProperty("rostro", out var face) && face.ValueKind == JsonValueKind.String
                     ? face.GetString()
                     : null;
 
-                var success = (!string.IsNullOrWhiteSpace(b64)) && (flagsOk || !flagsOk); // si hay imagen, la damos por buena.
-
+                var success = ok && !string.IsNullOrWhiteSpace(b64);
                 return (success, b64, raw);
             }
             catch (Exception ex)
