@@ -13,7 +13,6 @@ namespace Auth.Infrastructure.auth.Services
             // BaseAddress y Timeout ya vienen configurados desde Program.cs (AddHttpClient)
             _http = http;
             Console.WriteLine($"[BiometricApiClient] BaseAddress: {_http.BaseAddress}");
-
         }
 
         // ===================== Verificar =====================
@@ -37,12 +36,35 @@ namespace Auth.Infrastructure.auth.Services
             VerifyAsync(string rostroA, string rostroB, CancellationToken ct = default)
         {
             var req = new VerifyRequest { RostroA = rostroA, RostroB = rostroB };
-            using var res = await _http.PostAsJsonAsync("Rostro/Verificar", req, ct);
-            var raw = await res.Content.ReadAsStringAsync(ct);
-            if (!res.IsSuccessStatusCode) return (false, null, raw);
 
-            var data = JsonSerializer.Deserialize<VerifyResponse>(raw,
-                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            // ---- LOG de diagnóstico ----
+            var url = "Rostro/Verificar";
+            Console.WriteLine($"[BiometricApiClient] POST {url} (BaseAddress={_http.BaseAddress})");
+
+            using var res = await _http.PostAsJsonAsync(url, req, ct);
+            var raw = await res.Content.ReadAsStringAsync(ct);
+
+            var head = raw is null ? "(null)" : (raw.Length > 200 ? raw[..200] : raw);
+            Console.WriteLine($"[BiometricApiClient] Verify Status={(int)res.StatusCode} RawLen={(raw?.Length ?? 0)} RawHead={head}");
+
+            if (!res.IsSuccessStatusCode)
+                return (false, null, raw);
+
+            if (string.IsNullOrWhiteSpace(raw))
+                return (false, null, "(empty response)");
+
+            VerifyResponse? data = null;
+            try
+            {
+                data = JsonSerializer.Deserialize<VerifyResponse>(raw, new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true
+                });
+            }
+            catch (Exception ex)
+            {
+                return (false, null, $"JSON deserialization error: {ex.Message}; RAW={head}");
+            }
 
             var match = data?.IsMatch ?? data?.Success ?? data?.exito ?? false;
             return (match, data?.score, raw);
@@ -63,19 +85,50 @@ namespace Auth.Infrastructure.auth.Services
         {
             var req = new SegmentRequest { RostroA = rostroBase64, RostroB = "" };
 
-            using var res = await _http.PostAsJsonAsync("Rostro/Segmentar", req, ct);
+            // ---- LOG de diagnóstico ----
+            var url = "Rostro/Segmentar";
+            Console.WriteLine($"[BiometricApiClient] POST {url} (BaseAddress={_http.BaseAddress})");
+
+            using var res = await _http.PostAsJsonAsync(url, req, ct);
             var raw = await res.Content.ReadAsStringAsync(ct);
-            if (!res.IsSuccessStatusCode) return (false, null, raw);
 
-            using var doc = JsonDocument.Parse(raw);
-            var root = doc.RootElement;
+            var head = raw is null ? "(null)" : (raw.Length > 200 ? raw[..200] : raw);
+            Console.WriteLine($"[BiometricApiClient] Segment Status={(int)res.StatusCode} RawLen={(raw?.Length ?? 0)} RawHead={head}");
 
-            var ok = root.TryGetProperty("resultado", out var r) && r.GetBoolean()
-                     && root.TryGetProperty("segmentado", out var s) && s.GetBoolean();
+            if (!res.IsSuccessStatusCode)
+                return (false, null, raw);
 
-            string? b64 = root.TryGetProperty("rostro", out var face) ? face.GetString() : null;
+            if (string.IsNullOrWhiteSpace(raw))
+                return (false, null, "(empty response)");
 
-            return (ok && !string.IsNullOrWhiteSpace(b64), b64, raw);
+            try
+            {
+                using var doc = JsonDocument.Parse(raw);
+                var root = doc.RootElement;
+
+                var ok =
+                    root.TryGetProperty("resultado", out var r) && r.ValueKind == JsonValueKind.True ||
+                    (root.TryGetProperty("resultado", out r) && r.ValueKind == JsonValueKind.False && r.GetBoolean()); // robustez por si cambia tipo
+
+                var segOk =
+                    root.TryGetProperty("segmentado", out var s) && s.ValueKind == JsonValueKind.True ||
+                    (root.TryGetProperty("segmentado", out s) && s.ValueKind == JsonValueKind.False && s.GetBoolean());
+
+                // Si ambas flags están presentes las usamos; si no, seguimos con la imagen.
+                var flagsOk = ok && segOk;
+
+                string? b64 = root.TryGetProperty("rostro", out var face) && face.ValueKind == JsonValueKind.String
+                    ? face.GetString()
+                    : null;
+
+                var success = (!string.IsNullOrWhiteSpace(b64)) && (flagsOk || !flagsOk); // si hay imagen, la damos por buena.
+
+                return (success, b64, raw);
+            }
+            catch (Exception ex)
+            {
+                return (false, null, $"JSON parse error: {ex.Message}; RAW={head}");
+            }
         }
     }
 }
