@@ -120,6 +120,8 @@ builder.Services.AddHttpClient<BiometricApiClient>((sp, c) =>
     if (string.IsNullOrWhiteSpace(baseUrl))
         throw new InvalidOperationException("ExternalApis:Biometria:BaseUrl no está configurado.");
 
+    if (!baseUrl.EndsWith("/")) baseUrl += "/";
+
     c.BaseAddress = new Uri(baseUrl);
 
     // Respeta la clave 'TimeOutSeconds' (tal cual está escrita en tu appsettings)
