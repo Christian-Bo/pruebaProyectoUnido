@@ -12,6 +12,8 @@ namespace Auth.Infrastructure.auth.Services
         {
             // BaseAddress y Timeout ya vienen configurados desde Program.cs (AddHttpClient)
             _http = http;
+            Console.WriteLine($"[BiometricApiClient] BaseAddress: {_http.BaseAddress}");
+
         }
 
         // ===================== Verificar =====================
