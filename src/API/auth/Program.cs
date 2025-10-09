@@ -4,12 +4,13 @@ using Auth.Application.Contracts;                 // IAuthService
 using Auth.Infrastructure.Data;                  // AppDbContext
 using Auth.Infrastructure.Services;              // AuthService, JwtTokenService, IQrService, QrService, IQrCardGenerator, QrCardGenerator
 using Auth.Infrastructure.Services.Notifications; // EmailOptions, INotificationService, SmtpEmailNotificationService
-
+using Auth.Infrastructure.auth.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using QuestPDF.Infrastructure; // Licencia QuestPDF
+
 
 // Licencia de QuestPDF (antes de construir la app)
 QuestPDF.Settings.License = LicenseType.Community;
@@ -50,9 +51,6 @@ builder.Services.AddAuthentication(o =>
 
 builder.Services.AddAuthorization();
 
-// ======= CORS (DEV) =======
-// Permite llamar desde file://, http://localhost:puerto, etc.
-// En prod cambia a .WithOrigins("https://tu-front.com")
 builder.Services.AddCors(opt =>
 {
     opt.AddPolicy("dev", p => p
@@ -63,6 +61,7 @@ builder.Services.AddCors(opt =>
 });
 
 // ======= DI de servicios =======
+
 builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 
@@ -101,6 +100,9 @@ builder.Services.AddSwaggerGen(c =>
     c.AddSecurityDefinition(jwtSecurityScheme.Reference.Id, jwtSecurityScheme);
     c.AddSecurityRequirement(new OpenApiSecurityRequirement { { jwtSecurityScheme, Array.Empty<string>() } });
 });
+
+
+builder.Services.AddHttpClient<BiometricApiClient>();
 
 var app = builder.Build();
 

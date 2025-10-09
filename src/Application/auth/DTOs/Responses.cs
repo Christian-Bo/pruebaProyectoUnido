@@ -19,3 +19,10 @@ public class UsuarioDto
     public string NombreCompleto { get; set; } = default!;
     public string? Telefono { get; set; }
 }
+
+public class FacialLoginResponse
+    {
+        public bool Success { get; set; }
+        public string? Token { get; set; }
+        public string? Mensaje { get; set; }
+    }

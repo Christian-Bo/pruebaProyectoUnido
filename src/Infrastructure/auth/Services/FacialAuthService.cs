@@ -1,134 +1,67 @@
+using Auth.Application.Contracts;
+using Application.auth.DTOs;
+using Auth.Domain.Entities;           // <- AutenticacionFacial, Usuario
+using Auth.Infrastructure.Data;       // <- AppDbContext
+using Auth.Infrastructure.auth.Services; // <- BiometricApiClient (si ese es su namespace)
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Options;
-using Auth.Domain.Entities;
-using Auth.Infrastructure.Data;
-using Auth.Application.DTOs;
-using System.Security.Claims;
-using System.Text.Json;
 
-namespace Auth.Infrastructure.Services;
-
-public class FacialAuthService : IFacialAuthService
+namespace Auth.Infrastructure.Services   // <- deja este namespace para tus servicios
 {
-    private readonly AppDbContext _db;
-    private readonly IJwtTokenService _jwt;
-    private readonly FacialOptions _opt;
-
-    public FacialAuthService(AppDbContext db, IJwtTokenService jwt, IOptions<FacialOptions> opt)
+    public class FacialAuthService : IFacialAuthService
     {
-        _db = db; _jwt = jwt; _opt = opt.Value;
-    }
+        private readonly AppDbContext _db;
+        private readonly BiometricApiClient _bio;
+        private readonly IJwtTokenService _jwt; // tu servicio JWT
 
-    public async Task<AuthResponse> LoginFacialAsync(LoginFacialRequest dto)
-    {
-        if (string.IsNullOrWhiteSpace(dto.Encoding))
-            throw new ArgumentException("Se requiere 'Encoding' facial.");
-
-        var probe = FaceEncodingUtils.ParseEncoding128(dto.Encoding);
-
-        // Candidatos: por usuario/email si viene, o todos activos
-        IQueryable<AutenticacionFacial> query = _db.AutenticacionFacial
-            .Include(f => f.Usuario)
-            .Where(f => f.Activo && f.Usuario.Activo);
-
-        if (!string.IsNullOrWhiteSpace(dto.UsuarioOrEmail))
+        public FacialAuthService(AppDbContext db, BiometricApiClient bio, IJwtTokenService jwt)
         {
-            var ue = dto.UsuarioOrEmail.Trim();
-            query = query.Where(f => f.Usuario.UsuarioNombre == ue || f.Usuario.Email == ue);
+            _db = db;
+            _bio = bio;
+            _jwt = jwt;
         }
 
-        var faciales = await query.AsNoTracking().ToListAsync();
-        if (faciales.Count == 0) throw new UnauthorizedAccessException("No hay plantillas faciales activas para validar.");
-
-        // Buscar el mejor match (mínima distancia)
-        AutenticacionFacial? best = null;
-        double bestDist = double.MaxValue;
-
-        foreach (var f in faciales)
+        public async Task<(bool Success, int? UsuarioId, string Message)> LoginWithFaceAsync(string rostroBase64)
         {
-            var enc = FaceEncodingUtils.ParseEncoding128(f.EncodingFacial);
-            var dist = FaceEncodingUtils.EuclideanDistance(probe, enc);
-            if (dist < bestDist)
+            // Trae todas las referencias activas con imagen base64
+            var candidatos = await _db.Set<AutenticacionFacial>()
+                .Include(a => a.Usuario)
+                .Where(a => a.Activo && a.Usuario.Activo && a.ImagenReferencia != null)
+                .Select(a => new
+                {
+                    a.UsuarioId,
+                    a.ImagenReferencia,
+                    Usuario = a.Usuario
+                })
+                .ToListAsync();
+
+            foreach (var c in candidatos)
             {
-                bestDist = dist;
-                best = f;
+                // Evita la desestructuración; usa una variable
+                var verify = await _bio.VerifyAsync(rostroBase64, c.ImagenReferencia!);
+
+                if (verify.Match)
+                {
+                    // ===== Generar token (ajusta a TU firma real) =====
+                    // Opción A: firma típica (int userId, string username)
+                    // var token = _jwt.GenerateToken(c.UsuarioId, c.Usuario.Usuario);
+
+                    // Opción B: firma (string userId, string username)
+                    // var token = _jwt.GenerateToken(c.UsuarioId.ToString(), c.Usuario.Usuario);
+
+                    // Opción C: tu servicio recibe la entidad Usuario
+                    // var token = _jwt.GenerateToken(c.Usuario);
+
+                    // Si no sabes cuál tienes, deja temporalmente:
+                    //var token = _jwt.GenerateToken(c.UsuarioId.ToString(), c.Usuario.Usuario); // <- cambia si tu interfaz difiere
+
+                    // TODO: Inserta en tabla `sesiones` si corresponde
+
+                    // Enviamos el token en 'Message' como tenías planteado
+                    //return (true, c.UsuarioId, token);
+                }
             }
+
+            return (false, null, "No hubo coincidencia con ningún usuario activo.");
         }
-
-        if (best is null || bestDist > _opt.DistanceThreshold)
-            throw new UnauthorizedAccessException("Rostro no reconocido.");
-
-        var user = best.Usuario;
-
-        // (Opcional) Guardar imagen de intento si vino y si quieres auditar
-        if (!string.IsNullOrWhiteSpace(dto.ImagenBase64))
-        {
-            // puedes persistirla en otra tabla de auditoría si lo deseas.
-            // Aquí la omitimos para mantener simple el ejemplo.
-        }
-
-        // Emitir JWT + sesión (metodo_login = facial)
-        return await LoginInternalAsync(user, MetodoLogin.facial);
-    }
-
-    public async Task<int> RegisterFacialAsync(int userId, RegisterFacialRequest dto)
-    {
-        var user = await _db.Usuarios.FirstOrDefaultAsync(u => u.Id == userId && u.Activo);
-        if (user is null) throw new InvalidOperationException("Usuario no encontrado o inactivo.");
-
-        var enc = FaceEncodingUtils.ParseEncoding128(dto.Encoding);
-
-        // Guardamos como JSON para legibilidad (también puede ser CSV)
-        var json = JsonSerializer.Serialize(enc);
-
-        var facial = new AutenticacionFacial
-        {
-            UsuarioId = user.Id,
-            EncodingFacial = json,
-            ImagenReferencia = dto.ImagenBase64,
-            Activo = dto.Activo
-        };
-
-        _db.AutenticacionFacial.Add(facial);
-        await _db.SaveChangesAsync();
-        return facial.Id;
-    }
-
-    // Reutilizamos la lógica de AuthService para emitir token y registrar sesión
-    private async Task<AuthResponse> LoginInternalAsync(Usuario user, MetodoLogin metodo)
-    {
-        var claims = new[]
-        {
-            new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
-            new Claim(ClaimTypes.Name, user.UsuarioNombre),
-            new Claim(ClaimTypes.Email, user.Email)
-        };
-
-        var (token, _) = _jwt.CreateToken(claims);
-        var tokenHash = _jwt.ComputeSha256(token);
-
-        _db.Sesiones.Add(new Sesion
-        {
-            UsuarioId = user.Id,
-            SessionTokenHash = tokenHash,
-            MetodoLogin = metodo,
-            Activa = true
-        });
-
-        await _db.SaveChangesAsync();
-
-        return new AuthResponse
-        {
-            AccessToken = token,
-            ExpiresInSeconds = 60 * 60,
-            Usuario = new UsuarioDto
-            {
-                Id = user.Id,
-                Usuario = user.UsuarioNombre,
-                Email = user.Email,
-                NombreCompleto = user.NombreCompleto,
-                Telefono = user.Telefono
-            }
-        };
     }
 }

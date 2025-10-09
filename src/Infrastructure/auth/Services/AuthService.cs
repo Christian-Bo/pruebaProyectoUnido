@@ -147,8 +147,6 @@ public class AuthService : IAuthService
 
         await _db.SaveChangesAsync();
 
-        // ===== OPCIONAL: Enviar el token por correo (solo para pruebas académicas) =====
-        // Comentado si no lo necesitas. Descomenta si quieres recibir el JWT por email.
         /*
         try
         {
