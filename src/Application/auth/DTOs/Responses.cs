@@ -26,3 +26,16 @@ public class FacialLoginResponse
         public string? Token { get; set; }
         public string? Mensaje { get; set; }
     }
+public class SegmentResponseDto
+    {
+        public bool Success { get; set; }
+        public string? RostroSegmentado { get; set; } // base64 resultante
+        public string? Mensaje { get; set; }
+    }
+
+    public class SaveFaceResponseDto
+    {
+        public bool Success { get; set; }
+        public int? FacialId { get; set; }
+        public string? Mensaje { get; set; }
+    }    

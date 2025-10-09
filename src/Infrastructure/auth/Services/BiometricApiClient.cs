@@ -45,5 +45,38 @@ namespace Auth.Infrastructure.auth.Services
             var match = data?.IsMatch ?? data?.Success ?? data?.exito ?? false;
             return (match, data?.score, raw);
         }
+
+        private sealed class SegmentRequest
+        {
+            public string Rostro { get; set; } = string.Empty;
+        }
+        private sealed class SegmentResponse
+        {
+            // tolerante a diferentes nombres que pueda devolver la API
+            public string? RostroSegmentado { get; set; }
+            public string? Imagen { get; set; }
+            public string? Image { get; set; }
+            public bool? Success { get; set; }
+            public string? mensaje { get; set; }
+            public string? message { get; set; }
+        }
+
+        public async Task<(bool Success, string? Base64, string? Raw)>
+            SegmentAsync(string rostroBase64, CancellationToken ct = default)
+        {
+            var req = new SegmentRequest { Rostro = rostroBase64 };
+            using var res = await _http.PostAsJsonAsync("Rostro/Segmentar", req, ct);
+            var raw = await res.Content.ReadAsStringAsync(ct);
+            if (!res.IsSuccessStatusCode) return (false, null, raw);
+
+            var data = System.Text.Json.JsonSerializer.Deserialize<SegmentResponse>(raw,
+                new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+            var ok = data?.Success ?? true; // varias APIs devuelven 200 sin flag
+            var base64 = data?.RostroSegmentado ?? data?.Imagen ?? data?.Image;
+            return (ok && !string.IsNullOrWhiteSpace(base64), base64, raw);
+        }
     }
 }
+    
+
