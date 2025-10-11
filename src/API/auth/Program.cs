@@ -18,7 +18,6 @@ QuestPDF.Settings.License = LicenseType.Community;
 var builder = WebApplication.CreateBuilder(args);
 
 // ================= CONFIG PROVIDERS =================
-// asegura que cargue appsettings (base + por ambiente) y variables de entorno
 builder.Configuration
     .AddJsonFile("appsettings.json", optional: true, reloadOnChange: true)
     .AddJsonFile($"appsettings.{builder.Environment.EnvironmentName}.json", optional: true, reloadOnChange: true)
@@ -115,7 +114,6 @@ builder.Services.AddHttpClient<BiometricApiClient>((sp, c) =>
 {
     var cfg = sp.GetRequiredService<IConfiguration>();
 
-    // Lee desde tu appsettings: ExternalApis:Biometria
     var baseUrl = cfg["ExternalApis:Biometria:BaseUrl"];
     if (string.IsNullOrWhiteSpace(baseUrl))
         throw new InvalidOperationException("ExternalApis:Biometria:BaseUrl no está configurado.");
@@ -124,11 +122,9 @@ builder.Services.AddHttpClient<BiometricApiClient>((sp, c) =>
 
     c.BaseAddress = new Uri(baseUrl);
 
-    // Respeta la clave 'TimeOutSeconds' (tal cual está escrita en tu appsettings)
     var toutStr = cfg["ExternalApis:Biometria:TimeOutSeconds"];
     c.Timeout = TimeSpan.FromSeconds(int.TryParse(toutStr, out var t) ? t : 20);
 
-    // Si en el futuro te dan un token externo:
     // var bearer = cfg["ExternalApis:Biometria:BearerToken"];
     // if (!string.IsNullOrWhiteSpace(bearer))
     //     c.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", bearer);
@@ -140,11 +136,25 @@ app.UseSwagger();
 app.UseSwaggerUI();
 
 app.UseHttpsRedirection();
+
+// ===== ORDEN CORRECTO DEL PIPELINE =====
+app.UseRouting();
+
+// CORS DEBE IR ANTES DE AUTH, AUTZ Y MIDDLEWARES PROPIOS
+app.UseCors("dev");
+
 app.UseAuthentication();
 
-// Middleware de revocación (valida que el token esté activo en DB)
+// Middleware de revocación (después de CORS)
 app.Use(async (ctx, next) =>
 {
+    // Deja pasar preflight OPTIONS (importante para CORS)
+    if (HttpMethods.IsOptions(ctx.Request.Method))
+    {
+        ctx.Response.StatusCode = StatusCodes.Status204NoContent;
+        return;
+    }
+
     var auth = ctx.Request.Headers.Authorization.ToString();
     if (string.IsNullOrWhiteSpace(auth) || !auth.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
     {
@@ -168,9 +178,8 @@ app.Use(async (ctx, next) =>
     await next();
 });
 
-// 👇 IMPORTANTE: CORS antes de MapControllers
-app.UseCors("dev");
-
 app.UseAuthorization();
+
 app.MapControllers();
+
 app.Run();
