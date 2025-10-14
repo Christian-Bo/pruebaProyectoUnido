@@ -2,7 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
 
-// 👉 Interfaces y DTOs desde Application
+using Auth.Infrastructure;
 using Auth.Application.Contracts;     // IAuthService
 using Auth.Application.DTOs;
 
@@ -56,5 +56,21 @@ public class AuthController : ControllerBase
             Email = User.FindFirstValue(ClaimTypes.Email)
         };
         return Ok(user);
+    }
+
+    [HttpPost("send-card-now")]
+    [Authorize] // opcional; quítalo si quieres permitirlo sin token
+    public async Task<IActionResult> SendCardNow([FromBody] SendCardNowRequest dto)
+    {
+        if (dto is null || dto.UsuarioId <= 0)
+            return BadRequest("usuarioId requerido.");
+
+        await _auth.SendCardNowAsync(dto.UsuarioId);
+        return Ok(new { message = "Carnet enviado (si hay correo configurado y QR válido)." });
+    }
+
+    public class SendCardNowRequest
+    {
+        public int UsuarioId { get; set; }
     }
 }
