@@ -113,7 +113,7 @@ public class AuthService : IAuthService
         if (fotoBytes is null)
         {
             // Reintentar 3 veces con 1.5 s de espera — para dar tiempo a tu pipeline biométrico
-            const int maxTries = 3;
+            const int maxTries = 10;
             const int delayMs  = 1500;
             for (int i = 1; i <= maxTries && (fotoBytes is null); i++)
             {
