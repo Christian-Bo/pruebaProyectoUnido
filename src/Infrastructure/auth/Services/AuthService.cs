@@ -205,25 +205,33 @@ public class AuthService : IAuthService
     // ======= Dispara el envío del carnet AHORA (llámalo tras insertar la foto) =======
     public async Task SendCardNowAsync(int usuarioId)
     {
+        Console.WriteLine($"[MAIL] SendCardNowAsync IN usuario={usuarioId}");
+
         var user = await _db.Usuarios.FirstOrDefaultAsync(u => u.Id == usuarioId && u.Activo);
         if (user is null)
         {
             Console.WriteLine($"[MAIL] SendCardNowAsync: usuario {usuarioId} no existe o está inactivo.");
+            return; // no lanzar; endpoint devolverá 200 con mensaje genérico
+        }
+
+        // QR (si no existe, lo crea)
+        var qr = await _qr.GetOrCreateUserQrAsync(user.Id);
+        if (qr is null || string.IsNullOrWhiteSpace(qr.Codigo))
+        {
+            Console.WriteLine($"[MAIL] No se pudo obtener/crear QR para usuario={usuarioId}.");
             return;
         }
 
-        // Obtén/crea el QR permanente del carnet
-        var qr = await _qr.GetOrCreateUserQrAsync(user.Id);
-
-        // Obtén la foto más reciente (activa; o última si no hay activa)
+        // Foto (si no hay, se envía carnet sin foto)
         var fotoBytes = await TryGetUserPhotoBytesAsync(usuarioId);
+        Console.WriteLine($"[MAIL] Foto bytes={(fotoBytes?.Length ?? 0)} usuario={usuarioId}");
 
-        // Genera el PDF con (o sin) foto
+        // PDF
         var pdf = _card.GenerateRegistrationPdf(
-            fullName:  user.NombreCompleto,
-            userName:  user.UsuarioNombre,
-            email:     user.Email,
-            qrPayload: qr.Codigo,        // mapeado a codigo_qr en OnModelCreating
+            fullName: user.NombreCompleto,
+            userName: user.UsuarioNombre,
+            email: user.Email,
+            qrPayload: qr.Codigo,
             fotoBytes: fotoBytes
         );
 
@@ -234,7 +242,6 @@ public class AuthService : IAuthService
 
         try
         {
-            // Firma de INotificationService: (to, subject, html, name?, bytes?, contentType?)
             await _notify.SendEmailAsync(
                 toEmail: user.Email,
                 subject: "Tu carnet de acceso con código QR",
@@ -244,13 +251,17 @@ public class AuthService : IAuthService
                 attachmentContentType: pdf.ContentType
             );
 
-            Console.WriteLine($"[MAIL] SendCardNowAsync OK usuario={usuarioId} foto={(fotoBytes?.Length ?? 0)} bytes");
+            Console.WriteLine($"[MAIL] SendCardNowAsync OK usuario={usuarioId} email={user.Email}");
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[MAIL] SendCardNowAsync ERROR usuario={usuarioId}: {ex.Message}");
+            // 👇 No rompas el flujo: loguea y permite que el controller devuelva 200.
+            Console.WriteLine($"[MAIL] ERROR enviando email usuario={usuarioId}: {ex.Message}");
+            // Si prefieres que burbujee y el controller devuelva 500 con message, comenta la línea de return y 'throw;'
+            // throw;
         }
     }
+
 
     // ---------- Helpers privados ----------
 

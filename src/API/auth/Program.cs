@@ -31,6 +31,7 @@ builder.Services.AddDbContext<AppDbContext>(opts =>
 
 // ===== JWT =====
 builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection("Jwt"));
+
 var key = Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"]!);
 
 builder.Services.AddAuthentication(o =>
@@ -77,6 +78,7 @@ if (builder.Environment.IsDevelopment())
 else
     builder.Services.AddScoped<INotificationService, SendGridEmailNotificationService>();
 builder.Services.AddScoped<IFacialAuthService, FacialAuthService>();
+
 builder.Services.AddScoped<IQrService, QrService>();
 builder.Services.AddScoped<IQrCardGenerator, QrCardGenerator>();
 builder.Services.AddControllers();

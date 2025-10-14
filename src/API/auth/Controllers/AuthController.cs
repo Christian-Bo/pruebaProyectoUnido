@@ -1,9 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
-
-using Auth.Infrastructure;
-using Auth.Application.Contracts;     // IAuthService
+using Auth.Application.Contracts;
 using Auth.Application.DTOs;
 
 namespace Auth.API.Controllers;
@@ -13,14 +11,9 @@ namespace Auth.API.Controllers;
 public class AuthController : ControllerBase
 {
     private readonly IAuthService _auth;
-
-    // Si aún te da ambigüedad, cambia la firma por:
-    // public AuthController(Auth.Application.Contracts.IAuthService auth) => _auth = auth;
-
     public AuthController(IAuthService auth) => _auth = auth;
 
     [HttpPost("register")]
-    [ProducesResponseType(typeof(AuthResponse), StatusCodes.Status200OK)]
     public async Task<IActionResult> Register([FromBody] RegisterRequest dto)
     {
         var res = await _auth.RegisterAsync(dto);
@@ -28,7 +21,6 @@ public class AuthController : ControllerBase
     }
 
     [HttpPost("login")]
-    [ProducesResponseType(typeof(AuthResponse), StatusCodes.Status200OK)]
     public async Task<IActionResult> Login([FromBody] LoginRequest dto)
     {
         var res = await _auth.LoginAsync(dto);
@@ -58,15 +50,32 @@ public class AuthController : ControllerBase
         return Ok(user);
     }
 
-    [HttpPost("send-card-now")]
+    // ⚠️ Déjalo AllowAnonymous mientras pruebas. Luego puedes volver a [Authorize].
     [AllowAnonymous]
+    [HttpPost("send-card-now")]
     public async Task<IActionResult> SendCardNow([FromBody] SendCardNowRequest dto)
     {
         if (dto is null || dto.UsuarioId <= 0)
-            return BadRequest("usuarioId requerido.");
+        {
+            Console.WriteLine("[SEND-CARD] BadRequest: usuarioId faltante");
+            return BadRequest(new { message = "usuarioId requerido." });
+        }
 
-        await _auth.SendCardNowAsync(dto.UsuarioId);
-        return Ok(new { message = "Carnet enviado (si hay correo configurado y QR válido)." });
+        Console.WriteLine($"[SEND-CARD] Recibido usuarioId={dto.UsuarioId}");
+        try
+        {
+            // No debe lanzar: AuthService manejará errores internos
+            await _auth.SendCardNowAsync(dto.UsuarioId);
+
+            Console.WriteLine($"[SEND-CARD] OK usuarioId={dto.UsuarioId}");
+            return Ok(new { message = "Carnet enviado (si hay correo configurado y QR válido)." });
+        }
+        catch (Exception ex)
+        {
+            // Devuelve detalle para depurar (puedes ocultarlo en prod si quieres)
+            Console.WriteLine($"[SEND-CARD] ERROR usuarioId={dto.UsuarioId}: {ex}");
+            return StatusCode(500, new { message = ex.Message });
+        }
     }
 
     public class SendCardNowRequest
