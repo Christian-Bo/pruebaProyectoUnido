@@ -46,7 +46,7 @@ public class AppDbContext : DbContext
             e.Property(p => p.EncodingFacial).HasColumnName("encoding_facial")
                 .HasColumnType("TEXT");
             e.Property(p => p.ImagenReferencia).HasColumnName("imagen_referencia")
-                .HasColumnType("TEXT");
+                .HasColumnType("LONGTEXT");
             e.Property(p => p.Activo).HasColumnName("activo").HasDefaultValue(true);
             e.Property(p => p.FechaCreacion).HasColumnName("fecha_creacion")
                 .HasDefaultValueSql("CURRENT_TIMESTAMP");
