@@ -8,6 +8,7 @@ using Auth.Infrastructure.Services.Notifications;
 using System.Data.Common;
 using System.Linq;   // para Where, OrderByDescending, Select
 using System;      // para StringComparison, Convert
+using System.Threading.Tasks; // Task.Delay
 
 namespace Auth.Infrastructure.Services;
 
@@ -18,6 +19,9 @@ public class AuthService : IAuthService
     private readonly IQrService _qr;
     private readonly IQrCardGenerator _card;
     private readonly INotificationService _notify;
+
+    // Si quieres evitar enviar carnet sin foto, cambia a true:
+    private const bool NO_ENVIAR_SIN_FOTO = false;
 
     public AuthService(
         AppDbContext db,
@@ -103,40 +107,59 @@ public class AuthService : IAuthService
             if (user.Id <= 0) throw new InvalidOperationException("No se pudo obtener el Id del usuario insertado.");
         }
 
-        // -------- OBTENER FOTO DESDE DB (si existe) --------
+        // -------- OBTENER FOTO DESDE DB (con reintentos) --------
         byte[]? fotoBytes = await TryGetUserPhotoBytesAsync(user.Id);
+
+        if (fotoBytes is null)
+        {
+            // Reintentar 3 veces con 1.5 s de espera — para dar tiempo a tu pipeline biométrico
+            const int maxTries = 3;
+            const int delayMs  = 1500;
+            for (int i = 1; i <= maxTries && (fotoBytes is null); i++)
+            {
+                Console.WriteLine($"[FOTO] Reintento {i}/{maxTries} esperando {delayMs}ms para usuario={user.Id}...");
+                await Task.Delay(delayMs);
+                fotoBytes = await TryGetUserPhotoBytesAsync(user.Id);
+            }
+        }
 
         // Email con carnet QR (no romper si falla SMTP)
         try
         {
             var qr  = await _qr.GetOrCreateUserQrAsync(user.Id);
 
-            var pdf = _card.GenerateRegistrationPdf(
-                fullName: user.NombreCompleto,
-                userName: user.UsuarioNombre,
-                email: user.Email,
-                qrPayload: qr.Codigo,     // mapeado a codigo_qr en tu OnModelCreating
-                fotoBytes: fotoBytes      // si es null, el carnet muestra “Sin foto”
-            );
+            if (NO_ENVIAR_SIN_FOTO && (fotoBytes is null || fotoBytes.Length == 0))
+            {
+                Console.WriteLine($"[MAIL] NO_ENVIAR_SIN_FOTO=true: se omitió el envío de carnet sin foto. usuario={user.Id}");
+            }
+            else
+            {
+                var pdf = _card.GenerateRegistrationPdf(
+                    fullName: user.NombreCompleto,
+                    userName: user.UsuarioNombre,
+                    email: user.Email,
+                    qrPayload: qr.Codigo,     // mapeado a codigo_qr en tu OnModelCreating
+                    fotoBytes: fotoBytes      // si es null, el carnet muestra “Sin foto”
+                );
 
-            var bodyHtml = $@"
-                <p>Hola <b>{user.NombreCompleto}</b>,</p>
-                <p>Adjuntamos tu <b>carnet de acceso con código QR</b>.</p>
-                <p>Si no solicitaste este registro, contacta a soporte.</p>";
+                var bodyHtml = $@"
+                    <p>Hola <b>{user.NombreCompleto}</b>,</p>
+                    <p>Adjuntamos tu <b>carnet de acceso con código QR</b>.</p>
+                    <p>Si no solicitaste este registro, contacta a soporte.</p>";
 
-            // Importante: pasar parámetros sueltos (name, bytes, contentType)
-            await _notify.SendEmailAsync(
-                user.Email,
-                "Tu carnet de acceso con código QR",
-                bodyHtml,
-                pdf.FileName,
-                pdf.Content,
-                pdf.ContentType
-            );
+                await _notify.SendEmailAsync(
+                    user.Email,
+                    "Tu carnet de acceso con código QR",
+                    bodyHtml,
+                    pdf.FileName,
+                    pdf.Content,
+                    pdf.ContentType
+                );
+                Console.WriteLine($"[MAIL] Carnet enviado a {user.Email} (foto={(fotoBytes?.Length ?? 0)} bytes).");
+            }
         }
         catch (Exception ex)
         {
-            // log opcional
             Console.WriteLine($"[MAIL] Error enviando carnet: {ex.Message}");
         }
 
@@ -236,7 +259,8 @@ public class AuthService : IAuthService
     // ---------- Helpers privados ----------
 
     // Lee la imagen (Base64) más reciente y activa desde autenticacion_facial.
-    // Tolerante: limpia data-URL, espacios, saltos de línea y padding. Con logs para Railway.
+    // Si no hay activa, toma la última (fallback).
+    // Normaliza Base64 y loguea lo encontrado.
     private async Task<byte[]?> TryGetUserPhotoBytesAsync(int usuarioId)
     {
         try
@@ -274,7 +298,6 @@ public class AuthService : IAuthService
                      .Replace("\r", "", StringComparison.Ordinal)
                      .Replace("\n", "", StringComparison.Ordinal)
                      .Replace(" ", "+", StringComparison.Ordinal);
-
             var mod = b64.Length % 4;
             if (mod != 0) b64 = b64.PadRight(b64.Length + (4 - mod), '=');
 
