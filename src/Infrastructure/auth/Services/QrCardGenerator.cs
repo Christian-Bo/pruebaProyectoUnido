@@ -40,15 +40,10 @@ namespace Auth.Infrastructure.Services
         private const float CARD_HEIGHT = 190f;   // puntos
 
         public byte[] CreateCardPdf(string nombreCompleto, string usuario, string email, string qrContenido)
-        {
-            return RenderCard(nombreCompleto, usuario, email, qrContenido, null);
-        }
+            => RenderCard(nombreCompleto, usuario, email, qrContenido, null);
 
         public (string FileName, byte[] Content, string ContentType) GenerateRegistrationPdf(
-            string fullName,
-            string userName,
-            string email,
-            string qrPayload)
+            string fullName, string userName, string email, string qrPayload)
         {
             var bytes = RenderCard(fullName, userName, email, qrPayload, null);
             return ($"QR-{userName}.pdf", bytes, "application/pdf");
@@ -56,16 +51,10 @@ namespace Auth.Infrastructure.Services
 
         // ====== NUEVOS: con foto opcional ======
         public byte[] CreateCardPdf(string nombreCompleto, string usuario, string email, string qrContenido, byte[]? fotoBytes)
-        {
-            return RenderCard(nombreCompleto, usuario, email, qrContenido, fotoBytes);
-        }
+            => RenderCard(nombreCompleto, usuario, email, qrContenido, fotoBytes);
 
         public (string FileName, byte[] Content, string ContentType) GenerateRegistrationPdf(
-            string fullName,
-            string userName,
-            string email,
-            string qrPayload,
-            byte[]? fotoBytes)
+            string fullName, string userName, string email, string qrPayload, byte[]? fotoBytes)
         {
             var bytes = RenderCard(fullName, userName, email, qrPayload, fotoBytes);
             return ($"QR-{userName}.pdf", bytes, "application/pdf");
@@ -126,11 +115,13 @@ namespace Auth.Infrastructure.Services
                                 if (fotoBytes is not null && fotoBytes.Length > 0)
                                 {
                                     c.Item().PaddingTop(6).Text("Foto").FontColor(MUTED).FontSize(9);
-                                    // Marco simple de 90x90 aprox
-                                    c.Item().Width(90).Height(90)
-                                        .Border(1).BorderColor(BORDER)
-                                        .Padding(2)
-                                        .Image(fotoBytes);
+
+                                    // Marco 90x90. La imagen se adapta automáticamente al espacio del contenedor.
+                                    c.Item()
+                                     .Width(90).Height(90)
+                                     .Border(1).BorderColor(BORDER).Padding(2)
+                                     .AlignMiddle().AlignCenter()
+                                     .Image(fotoBytes);  // sin FitArea (no lo soporta tu versión)
                                 }
 
                                 c.Item().PaddingTop(6).Text("Pequeña información").FontColor(MUTED).FontSize(10);

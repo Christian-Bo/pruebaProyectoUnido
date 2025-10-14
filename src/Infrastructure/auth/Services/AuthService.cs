@@ -104,7 +104,6 @@ public class AuthService : IAuthService
         }
 
         // -------- OBTENER FOTO DESDE DB (si existe) --------
-        // Busca la última foto activa en autenticacion_facial y la decodifica a bytes.
         byte[]? fotoBytes = await TryGetUserPhotoBytesAsync(user.Id);
 
         // Email con carnet QR (no romper si falla SMTP)
@@ -112,14 +111,12 @@ public class AuthService : IAuthService
         {
             var qr  = await _qr.GetOrCreateUserQrAsync(user.Id);
 
-            // Si tu IQrCardGenerator ya tiene overload con fotoBytes, úsalo:
-            // (fileName, content, contentType) para adjuntar directo
             var pdf = _card.GenerateRegistrationPdf(
                 fullName: user.NombreCompleto,
                 userName: user.UsuarioNombre,
                 email: user.Email,
                 qrPayload: qr.Codigo,
-                fotoBytes: fotoBytes
+                fotoBytes: fotoBytes  // <- se envía la foto; si es null, se omite
             );
 
             var bodyHtml = $@"
@@ -232,26 +229,43 @@ public class AuthService : IAuthService
     // ---------- Helpers privados ----------
 
     // Lee la imagen (Base64) más reciente y activa desde autenticacion_facial y la convierte a bytes.
-    // Tolera que el Base64 venga como data URL (data:image/...;base64,AAAA...).
+    // Tolerante: limpia data-URL, espacios, saltos de línea y padding.
     private async Task<byte[]?> TryGetUserPhotoBytesAsync(int usuarioId)
     {
-        var fotoBase64 = await _db.AutenticacionFacial
+        var b64 = await _db.AutenticacionFacial
             .Where(a => a.UsuarioId == usuarioId && a.Activo)
             .OrderByDescending(a => a.FechaCreacion)
             .Select(a => a.ImagenReferencia)
             .FirstOrDefaultAsync();
 
-        if (string.IsNullOrWhiteSpace(fotoBase64))
+        if (string.IsNullOrWhiteSpace(b64))
             return null;
 
-        var pure = StripDataUrlPrefix(fotoBase64);
+        b64 = StripDataUrlPrefix(b64);
+        b64 = b64.Trim()
+                 .Replace("\r", "", StringComparison.Ordinal)
+                 .Replace("\n", "", StringComparison.Ordinal)
+                 .Replace(" ", "+", StringComparison.Ordinal);
+        var mod = b64.Length % 4;
+        if (mod != 0) b64 = b64.PadRight(b64.Length + (4 - mod), '=');
+
         try
         {
-            return Convert.FromBase64String(pure);
+            return Convert.FromBase64String(b64);
         }
         catch
         {
-            return null;
+            try
+            {
+                b64 = b64.Replace('-', '+').Replace('_', '/');
+                var mod2 = b64.Length % 4;
+                if (mod2 != 0) b64 = b64.PadRight(b64.Length + (4 - mod2), '=');
+                return Convert.FromBase64String(b64);
+            }
+            catch
+            {
+                return null;
+            }
         }
     }
 
