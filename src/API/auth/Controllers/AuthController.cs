@@ -59,7 +59,7 @@ public class AuthController : ControllerBase
     }
 
     [HttpPost("send-card-now")]
-    [Authorize] // opcional; quítalo si quieres permitirlo sin token
+    [AllowAnonymous]
     public async Task<IActionResult> SendCardNow([FromBody] SendCardNowRequest dto)
     {
         if (dto is null || dto.UsuarioId <= 0)
