@@ -7,31 +7,34 @@ using SendGrid.Helpers.Mail;
 
 namespace Auth.Infrastructure.Services.Notifications
 {
-    // Ajusta el namespace si tu proyecto usa otro
+    // Implementa ambas firmas de INotificationService
     public class SendGridEmailNotificationService : INotificationService
     {
         private readonly IConfiguration _cfg;
         public SendGridEmailNotificationService(IConfiguration cfg) => _cfg = cfg;
 
-        // Firma recomendada: un adjunto opcional como tupla (nombre, bytes, contentType).
-        // Si tu INotificationService tiene otra firma, ver NOTA al final.
+        // ===========================================
+        // 1) NUEVA FIRMA (parámetros separados)
+        // ===========================================
         public async Task SendEmailAsync(
             string toEmail,
             string subject,
             string htmlBody,
-            (string FileName, byte[] Content, string ContentType)? attachment = null)
+            string? attachmentName = null,
+            byte[]? attachmentBytes = null,
+            string? attachmentContentType = null)
         {
             if (string.IsNullOrWhiteSpace(toEmail))
                 throw new ArgumentException("El email de destino está vacío.", nameof(toEmail));
 
-            // 1) API Key: primero config, si no, variable de entorno (Railway)
+            // API Key: config o variable de entorno (Railway)
             var apiKey = _cfg["SendGrid:ApiKey"];
             if (string.IsNullOrWhiteSpace(apiKey))
                 apiKey = Environment.GetEnvironmentVariable("SENDGRID_API_KEY");
             if (string.IsNullOrWhiteSpace(apiKey))
                 throw new InvalidOperationException("No hay API Key de SendGrid. Configure SendGrid:ApiKey o variable SENDGRID_API_KEY.");
 
-            // 2) From: toma Email:From (si ya lo usabas) o SendGrid:From
+            // From: prioriza Email:From (si lo usas), sino SendGrid:From
             var fromRaw = _cfg["Email:From"];
             if (string.IsNullOrWhiteSpace(fromRaw))
                 fromRaw = _cfg["SendGrid:From"];
@@ -41,7 +44,6 @@ namespace Auth.Infrastructure.Services.Notifications
             var (fromEmail, fromName) = ParseAddress(fromRaw);
             var (toAddr, toName) = ParseAddress(toEmail);
 
-            // 3) Construir mensaje
             var msg = new SendGridMessage
             {
                 From = new EmailAddress(fromEmail, fromName),
@@ -50,17 +52,20 @@ namespace Auth.Infrastructure.Services.Notifications
             };
             msg.AddTo(new EmailAddress(toAddr, toName));
 
-            if (attachment.HasValue && attachment.Value.Content?.Length > 0)
+            // Adjuntar si procede
+            if (!string.IsNullOrWhiteSpace(attachmentName) && attachmentBytes is { Length: > 0 })
             {
-                var base64 = Convert.ToBase64String(attachment.Value.Content);
-                msg.AddAttachment(attachment.Value.FileName ?? "adjunto",
-                                  base64,
-                                  attachment.Value.ContentType ?? "application/octet-stream");
+                var base64 = Convert.ToBase64String(attachmentBytes);
+                msg.AddAttachment(
+                    attachmentName,
+                    base64,
+                    string.IsNullOrWhiteSpace(attachmentContentType) ? "application/octet-stream" : attachmentContentType
+                );
             }
 
-            // 4) Enviar
             var client = new SendGridClient(apiKey);
             var response = await client.SendEmailAsync(msg);
+
             if ((int)response.StatusCode >= 400)
             {
                 var body = await response.Body.ReadAsStringAsync();
@@ -68,13 +73,50 @@ namespace Auth.Infrastructure.Services.Notifications
             }
         }
 
+        // ===========================================
+        // 2) FIRMA ANTIGUA (tupla) — compatibilidad
+        //    Redirige a la NUEVA firma
+        // ===========================================
+        public async Task SendEmailAsync(
+            string toEmail,
+            string subject,
+            string htmlBody,
+            (string FileName, byte[] Content, string ContentType)? attachment)
+        {
+            if (attachment.HasValue)
+            {
+                await SendEmailAsync(
+                    toEmail,
+                    subject,
+                    htmlBody,
+                    attachment.Value.FileName,
+                    attachment.Value.Content,
+                    attachment.Value.ContentType
+                );
+            }
+            else
+            {
+                await SendEmailAsync(
+                    toEmail,
+                    subject,
+                    htmlBody,
+                    null,
+                    null,
+                    null
+                );
+            }
+        }
+
+        // -------------------------------------------
+        // Helpers
+        // -------------------------------------------
         private static (string Email, string Name) ParseAddress(string raw)
         {
             if (string.IsNullOrWhiteSpace(raw)) return (raw, string.Empty);
             var m = Regex.Match(raw, @"^(.*)<([^>]+)>$");
             if (m.Success)
             {
-                var name = m.Groups[1].Value.Trim().Trim('\"');
+                var name  = m.Groups[1].Value.Trim().Trim('\"');
                 var email = m.Groups[2].Value.Trim();
                 return (email, name);
             }

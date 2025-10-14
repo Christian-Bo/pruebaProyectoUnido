@@ -2,7 +2,7 @@ namespace Auth.Infrastructure.Services.Notifications
 {
     public interface INotificationService
     {
-        // Nueva firma (parámetros separados) — la que usa tu AuthService actual
+        // NUEVA firma (parámetros separados) — la que usa tu AuthService ahora
         Task SendEmailAsync(
             string toEmail,
             string subject,
@@ -12,7 +12,7 @@ namespace Auth.Infrastructure.Services.Notifications
             string? attachmentContentType = null
         );
 
-        // Firma anterior (tupla) — se mantiene por compatibilidad
+        // Firma anterior (tupla) — mantenida por compatibilidad
         Task SendEmailAsync(
             string toEmail,
             string subject,
