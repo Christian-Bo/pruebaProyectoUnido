@@ -36,8 +36,8 @@ namespace Auth.Infrastructure.Services
         private const string INK    = "#e5e7eb"; // slate-200
         private const string MUTED  = "#9ca3af"; // slate-400
 
-        private const float CARD_WIDTH  = 300f;   // puntos
-        private const float CARD_HEIGHT = 190f;   // puntos
+        private const float CARD_WIDTH  = 320f;   // un poco más ancho
+        private const float CARD_HEIGHT = 200f;   // un poco más alto
 
         public byte[] CreateCardPdf(string nombreCompleto, string usuario, string email, string qrContenido)
             => RenderCard(nombreCompleto, usuario, email, qrContenido, null);
@@ -85,60 +85,64 @@ namespace Auth.Infrastructure.Services
                         col.Item().Row(row =>
                         {
                             row.RelativeItem().Text("Información usuarios").SemiBold().FontSize(12);
-                            // Chip simple (sin esquinas redondeadas para máxima compatibilidad)
-                            row.ConstantItem(100).AlignRight().Border(1).BorderColor("#38bdf8")
+                            // Badge “UNIVERSIDAD” (si luego quieres logo, podemos agregar overload con logoBytes)
+                            row.ConstantItem(110).Border(1).BorderColor("#38bdf8")
                                .Background("#0f172a").PaddingVertical(3).PaddingHorizontal(8)
+                               .AlignRight()
                                .Text("UNIVERSIDAD").FontColor("#38bdf8").FontSize(9).SemiBold();
                         });
 
                         col.Item().LineHorizontal(0.7f).LineColor(BORDER);
 
-                        // Cuerpo: info (y foto si hay) a la izquierda, QR a la derecha
+                        // Cuerpo: izquierda (foto + datos), derecha (QR)
                         col.Item().Row(row =>
                         {
-                            // Izquierda (info + foto)
+                            // Izquierda (foto + datos)
                             row.RelativeItem().Column(c =>
                             {
-                                c.Item().Text(nombreCompleto).FontSize(16).SemiBold();
-                                c.Item().Text(t =>
+                                c.Item().Row(infoRow =>
                                 {
-                                    t.Span("Usuario: ").FontColor(MUTED);
-                                    t.Span(usuario);
+                                    // Foto (opcional) en marco reservado 100x110
+                                    infoRow.ConstantItem(100).Column(fc =>
+                                    {
+                                        fc.Item().Text("Foto").FontColor(MUTED).FontSize(9);
+                                        fc.Item().Width(100).Height(110)
+                                            .Border(1).BorderColor(BORDER).Padding(2)
+                                            .AlignMiddle().AlignCenter()
+                                            .Element(e =>
+                                            {
+                                                if (fotoBytes is { Length: > 0 })
+                                                    e.Image(fotoBytes);
+                                                else
+                                                    e.Text("Sin foto").FontColor(MUTED).FontSize(9);
+                                            });
+                                    });
+
+                                    // Datos a la derecha de la foto
+                                    infoRow.RelativeItem().Column(dc =>
+                                    {
+                                        dc.Item().Text(nombreCompleto).FontSize(16).SemiBold();
+                                        dc.Item().Text(t => { t.Span("Usuario: ").FontColor(MUTED); t.Span(usuario); });
+                                        dc.Item().Text(t => { t.Span("Email: ").FontColor(MUTED); t.Span(email); });
+                                        dc.Item().PaddingTop(6).Text("Pequeña información").FontColor(MUTED).FontSize(10);
+                                    });
                                 });
-                                c.Item().Text(t =>
-                                {
-                                    t.Span("Email: ").FontColor(MUTED);
-                                    t.Span(email);
-                                });
-
-                                // Foto (opcional)
-                                if (fotoBytes is not null && fotoBytes.Length > 0)
-                                {
-                                    c.Item().PaddingTop(6).Text("Foto").FontColor(MUTED).FontSize(9);
-
-                                    // Marco 90x90. La imagen se adapta automáticamente al espacio del contenedor.
-                                    c.Item()
-                                     .Width(90).Height(90)
-                                     .Border(1).BorderColor(BORDER).Padding(2)
-                                     .AlignMiddle().AlignCenter()
-                                     .Image(fotoBytes);  // sin FitArea (no lo soporta tu versión)
-                                }
-
-                                c.Item().PaddingTop(6).Text("Pequeña información").FontColor(MUTED).FontSize(10);
                             });
 
                             // Derecha (QR)
-                            row.ConstantItem(95).Column(c =>
+                            row.ConstantItem(120).Column(c =>
                             {
-                                // Marco del QR (sin esquinas redondeadas)
-                                c.Item().Border(1).BorderColor("#e2b857").Padding(4).Height(95).AlignCenter().AlignMiddle()
+                                c.Item().Border(1).BorderColor("#e2b857").Padding(6).Height(120)
+                                 .AlignCenter().AlignMiddle()
                                  .Image(qrPng);
                                 c.Item().AlignCenter().Text("QR usuario").FontSize(9).FontColor(INK);
                             });
                         });
 
                         // Nota al pie
-                        col.Item().PaddingTop(4).Text("Acceso autorizado. Presente este carnet.").Italic().FontColor(MUTED);
+                        col.Item().PaddingTop(6)
+                          .Text("Acceso autorizado. Presente este carnet.")
+                          .Italic().FontColor(MUTED);
                     });
                 });
             }).GeneratePdf();
