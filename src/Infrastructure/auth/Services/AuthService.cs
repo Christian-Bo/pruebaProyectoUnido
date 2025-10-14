@@ -8,7 +8,6 @@ using Auth.Infrastructure.Services.Notifications;
 using System.Data.Common;
 using System.Linq;   // Where, OrderByDescending, Select
 using System;      // StringComparison, Convert
-using System.Threading.Tasks; // Task.Delay
 
 namespace Auth.Infrastructure.Services;
 
@@ -20,9 +19,6 @@ public class AuthService : IAuthService
     private readonly IQrCardGenerator _card;
     private readonly INotificationService _notify;
 
-    // Si quieres evitar enviar carnet sin foto, cambia a true:
-    private const bool NO_ENVIAR_SIN_FOTO = false;
-
     public AuthService(
         AppDbContext db,
         IJwtTokenService jwt,
@@ -32,7 +28,7 @@ public class AuthService : IAuthService
     {
         _db = db;
         _jwt = jwt;
-        _qr = qr;
+        _qr  = qr;
         _card = card;
         _notify = notify;
     }
@@ -77,7 +73,9 @@ public class AuthService : IAuthService
         }
     }
 
-    // Registra usuario, hasheando en BD, genera carnet QR y hace login automático
+    // Registra usuario (sin esperar foto). Hace login automático.
+    // El envío del carnet se hará después, llamando a SendCardNowAsync(usuarioId)
+    // desde el flujo que guarda la foto en autenticacion_facial.
     public async Task<AuthResponse> RegisterAsync(RegisterRequest dto)
     {
         if (await _db.Usuarios.AnyAsync(u => u.UsuarioNombre == dto.Usuario || u.Email == dto.Email))
@@ -107,68 +105,13 @@ public class AuthService : IAuthService
             if (user.Id <= 0) throw new InvalidOperationException("No se pudo obtener el Id del usuario insertado.");
         }
 
-        // -------- OBTENER FOTO DESDE DB (con reintentos suaves) --------
-        byte[]? fotoBytes = await TryGetUserPhotoBytesAsync(user.Id);
-
-        if (fotoBytes is null)
-        {
-            // Reintentar (pipeline biométrico suele guardar milisegundos/segundos después)
-            const int maxTries = 10;
-            const int delayMs  = 1500;
-            for (int i = 1; i <= maxTries && (fotoBytes is null); i++)
-            {
-                Console.WriteLine($"[FOTO] Reintento {i}/{maxTries} esperando {delayMs}ms para usuario={user.Id}...");
-                await Task.Delay(delayMs);
-                fotoBytes = await TryGetUserPhotoBytesAsync(user.Id);
-            }
-        }
-
-        // Email con carnet QR (no romper si falla SMTP)
-        try
-        {
-            // QR permanente para el carnet (sirve para login)
-            var qr  = await _qr.GetOrCreateUserQrAsync(user.Id);
-
-            if (NO_ENVIAR_SIN_FOTO && (fotoBytes is null || fotoBytes.Length == 0))
-            {
-                Console.WriteLine($"[MAIL] NO_ENVIAR_SIN_FOTO=true: se omitió el envío de carnet sin foto. usuario={user.Id}");
-            }
-            else
-            {
-                var pdf = _card.GenerateRegistrationPdf(
-                    fullName:  user.NombreCompleto,
-                    userName:  user.UsuarioNombre,
-                    email:     user.Email,
-                    qrPayload: qr.Codigo,         // mapeado a codigo_qr en tu OnModelCreating
-                    fotoBytes: fotoBytes          // si es null, el card muestra “Sin foto”
-                );
-
-                var bodyHtml = $@"
-                    <p>Hola <b>{user.NombreCompleto}</b>,</p>
-                    <p>Adjuntamos tu <b>carnet de acceso con código QR</b>{(fotoBytes != null ? " con tu fotografía" : "")}.</p>
-                    <p>Si no solicitaste este registro, contacta a soporte.</p>";
-
-                // Firma de INotificationService: (to, subject, html, name?, bytes?, contentType?)
-                await _notify.SendEmailAsync(
-                    toEmail: user.Email,
-                    subject: "Tu carnet de acceso con código QR",
-                    htmlBody: bodyHtml,
-                    attachmentName: pdf.FileName,
-                    attachmentBytes: pdf.Content,
-                    attachmentContentType: pdf.ContentType
-                );
-
-                Console.WriteLine($"[MAIL] Carnet enviado a {user.Email} (foto={(fotoBytes?.Length ?? 0)} bytes).");
-            }
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"[MAIL] Error enviando carnet: {ex.Message}");
-        }
+        // (Opcional) Si quieres, podrías pre-crear un QR aquí para “reservarlo”.
+        // Pero no es necesario; SendCardNowAsync hará GetOrCreateUserQrAsync cuando se dispare.
 
         var resp = await LoginInternalAsync(user, MetodoLogin.password);
 
         await tx.CommitAsync();
+        Console.WriteLine($"[REGISTER] Usuario {user.Id} creado. Recuerda llamar SendCardNowAsync({user.Id}) tras guardar la foto.");
         return resp;
     }
 
@@ -191,7 +134,7 @@ public class AuthService : IAuthService
         return await LoginInternalAsync(user, MetodoLogin.password);
     }
 
-    // ============ NUEVO: Login usando el QR del CARNET (permanente, no se invalida) ============
+    // ============ Login usando el QR del CARNET (permanente, no se invalida) ============
     public async Task<AuthResponse> LoginByCarnetQrAsync(string codigoQr)
     {
         if (string.IsNullOrWhiteSpace(codigoQr))
@@ -259,7 +202,7 @@ public class AuthService : IAuthService
         };
     }
 
-    // ======= NUEVO: Enviar carnet “ahora” (útil después de insertar la foto) =======
+    // ======= Dispara el envío del carnet AHORA (llámalo tras insertar la foto) =======
     public async Task SendCardNowAsync(int usuarioId)
     {
         var user = await _db.Usuarios.FirstOrDefaultAsync(u => u.Id == usuarioId && u.Activo);
@@ -269,14 +212,18 @@ public class AuthService : IAuthService
             return;
         }
 
+        // Obtén/crea el QR permanente del carnet
         var qr = await _qr.GetOrCreateUserQrAsync(user.Id);
-        var fotoBytes = await TryGetUserPhotoBytesForSendNowAsync(usuarioId);
 
+        // Obtén la foto más reciente (activa; o última si no hay activa)
+        var fotoBytes = await TryGetUserPhotoBytesAsync(usuarioId);
+
+        // Genera el PDF con (o sin) foto
         var pdf = _card.GenerateRegistrationPdf(
-            fullName: user.NombreCompleto,
-            userName: user.UsuarioNombre,
-            email: user.Email,
-            qrPayload: qr.Codigo,
+            fullName:  user.NombreCompleto,
+            userName:  user.UsuarioNombre,
+            email:     user.Email,
+            qrPayload: qr.Codigo,        // mapeado a codigo_qr en OnModelCreating
             fotoBytes: fotoBytes
         );
 
@@ -285,23 +232,31 @@ public class AuthService : IAuthService
             <p>Adjuntamos tu <b>carnet de acceso con código QR</b>{(fotoBytes != null ? " con tu fotografía" : "")}.</p>
             <p>Si no solicitaste este registro, contacta a soporte.</p>";
 
-        await _notify.SendEmailAsync(
-            toEmail: user.Email,
-            subject: "Tu carnet de acceso con código QR",
-            htmlBody: bodyHtml,
-            attachmentName: pdf.FileName,
-            attachmentBytes: pdf.Content,
-            attachmentContentType: pdf.ContentType
-        );
+        try
+        {
+            // Firma de INotificationService: (to, subject, html, name?, bytes?, contentType?)
+            await _notify.SendEmailAsync(
+                toEmail: user.Email,
+                subject: "Tu carnet de acceso con código QR",
+                htmlBody: bodyHtml,
+                attachmentName: pdf.FileName,
+                attachmentBytes: pdf.Content,
+                attachmentContentType: pdf.ContentType
+            );
 
-        Console.WriteLine($"[MAIL] SendCardNowAsync OK usuario={usuarioId} foto={(fotoBytes?.Length ?? 0)} bytes");
+            Console.WriteLine($"[MAIL] SendCardNowAsync OK usuario={usuarioId} foto={(fotoBytes?.Length ?? 0)} bytes");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[MAIL] SendCardNowAsync ERROR usuario={usuarioId}: {ex.Message}");
+        }
     }
 
     // ---------- Helpers privados ----------
 
     // Lee la imagen (Base64) más reciente y activa desde autenticacion_facial.
-    // Si no hay activa, toma la última (fallback).
-    // Normaliza Base64 y loguea lo encontrado.
+    // Si no hay activa, toma la última.
+    // Normaliza Base64 y la convierte a bytes.
     private async Task<byte[]?> TryGetUserPhotoBytesAsync(int usuarioId)
     {
         try
@@ -348,21 +303,21 @@ public class AuthService : IAuthService
                 Console.WriteLine($"[FOTO] Decodificación OK. bytes={bytes.Length}");
                 return bytes;
             }
-            catch (Exception ex1)
+            catch
             {
-                Console.WriteLine($"[FOTO] Base64 estándar falló: {ex1.Message}. Intentando url-safe...");
+                // Intento url-safe
+                b64 = b64.Replace('-', '+').Replace('_', '/');
+                var mod2 = b64.Length % 4;
+                if (mod2 != 0) b64 = b64.PadRight(b64.Length + (4 - mod2), '=');
                 try
                 {
-                    b64 = b64.Replace('-', '+').Replace('_', '/');
-                    var mod2 = b64.Length % 4;
-                    if (mod2 != 0) b64 = b64.PadRight(b64.Length + (4 - mod2), '=');
                     var bytes2 = Convert.FromBase64String(b64);
                     Console.WriteLine($"[FOTO] Decodificación url-safe OK. bytes={bytes2.Length}");
                     return bytes2;
                 }
-                catch (Exception ex2)
+                catch
                 {
-                    Console.WriteLine($"[FOTO] Decodificación fallida definitivamente: {ex2.Message}");
+                    Console.WriteLine("[FOTO] Decodificación fallida.");
                     return null;
                 }
             }
@@ -371,47 +326,6 @@ public class AuthService : IAuthService
         {
             Console.WriteLine($"[FOTO] Error consultando foto usuario={usuarioId}: {ex.Message}");
             return null;
-        }
-    }
-
-    // Versión sin logs verbosos (para SendCardNowAsync)
-    private async Task<byte[]?> TryGetUserPhotoBytesForSendNowAsync(int usuarioId)
-    {
-        var row = await _db.AutenticacionFacial
-            .Where(a => a.UsuarioId == usuarioId && a.Activo)
-            .OrderByDescending(a => a.FechaCreacion)
-            .Select(a => new { a.Id, a.ImagenReferencia })
-            .FirstOrDefaultAsync();
-
-        if (row is null)
-        {
-            row = await _db.AutenticacionFacial
-                .Where(a => a.UsuarioId == usuarioId)
-                .OrderByDescending(a => a.FechaCreacion)
-                .Select(a => new { a.Id, a.ImagenReferencia })
-                .FirstOrDefaultAsync();
-            if (row is null) return null;
-        }
-
-        if (string.IsNullOrWhiteSpace(row.ImagenReferencia))
-            return null;
-
-        string b64 = StripDataUrlPrefix(row.ImagenReferencia);
-        b64 = b64.Trim().Replace("\r","").Replace("\n","").Replace(" ", "+");
-        var mod = b64.Length % 4;
-        if (mod != 0) b64 = b64.PadRight(b64.Length + (4 - mod), '=');
-
-        try { return Convert.FromBase64String(b64); }
-        catch
-        {
-            try
-            {
-                b64 = b64.Replace('-', '+').Replace('_', '/');
-                var mod2 = b64.Length % 4;
-                if (mod2 != 0) b64 = b64.PadRight(b64.Length + (4 - mod2), '=');
-                return Convert.FromBase64String(b64);
-            }
-            catch { return null; }
         }
     }
 
