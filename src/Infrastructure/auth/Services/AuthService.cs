@@ -6,6 +6,8 @@ using Auth.Application.DTOs;
 using System.Security.Claims;
 using Auth.Infrastructure.Services.Notifications;
 using System.Data.Common;
+using System.Linq;   // para Where, OrderByDescending, Select
+using System;      // para StringComparison, Convert
 
 namespace Auth.Infrastructure.Services;
 
@@ -101,11 +103,24 @@ public class AuthService : IAuthService
             if (user.Id <= 0) throw new InvalidOperationException("No se pudo obtener el Id del usuario insertado.");
         }
 
+        // -------- OBTENER FOTO DESDE DB (si existe) --------
+        // Busca la última foto activa en autenticacion_facial y la decodifica a bytes.
+        byte[]? fotoBytes = await TryGetUserPhotoBytesAsync(user.Id);
+
         // Email con carnet QR (no romper si falla SMTP)
         try
         {
             var qr  = await _qr.GetOrCreateUserQrAsync(user.Id);
-            var pdf = _card.CreateCardPdf(user.NombreCompleto, user.UsuarioNombre, user.Email, qr.Codigo);
+
+            // Si tu IQrCardGenerator ya tiene overload con fotoBytes, úsalo:
+            // (fileName, content, contentType) para adjuntar directo
+            var pdf = _card.GenerateRegistrationPdf(
+                fullName: user.NombreCompleto,
+                userName: user.UsuarioNombre,
+                email: user.Email,
+                qrPayload: qr.Codigo,
+                fotoBytes: fotoBytes
+            );
 
             var bodyHtml = $@"
                 <p>Hola <b>{user.NombreCompleto}</b>,</p>
@@ -116,7 +131,7 @@ public class AuthService : IAuthService
                 user.Email,
                 "Tu carnet de acceso con código QR",
                 bodyHtml,
-                ("carnet_qr.pdf", pdf, "application/pdf")
+                (pdf.FileName, pdf.Content, pdf.ContentType)
             );
         }
         catch { /* log opcional */ }
@@ -144,6 +159,19 @@ public class AuthService : IAuthService
             throw new UnauthorizedAccessException("Credenciales inválidas.");
 
         return await LoginInternalAsync(user, MetodoLogin.password);
+    }
+
+    // ============ NUEVO: Login usando el QR del CARNET (permanente, no se invalida) ============
+    public async Task<AuthResponse> LoginByCarnetQrAsync(string codigoQr)
+    {
+        if (string.IsNullOrWhiteSpace(codigoQr))
+            throw new UnauthorizedAccessException("QR inválido.");
+
+        var user = await _qr.TryLoginWithCarnetQrAsync(codigoQr);
+        if (user is null)
+            throw new UnauthorizedAccessException("QR inválido o usuario inactivo.");
+
+        return await LoginInternalAsync(user, MetodoLogin.qr);
     }
 
     // Cierra sesión invalidando por hash del token
@@ -199,5 +227,39 @@ public class AuthService : IAuthService
                 Telefono = user.Telefono
             }
         };
+    }
+
+    // ---------- Helpers privados ----------
+
+    // Lee la imagen (Base64) más reciente y activa desde autenticacion_facial y la convierte a bytes.
+    // Tolera que el Base64 venga como data URL (data:image/...;base64,AAAA...).
+    private async Task<byte[]?> TryGetUserPhotoBytesAsync(int usuarioId)
+    {
+        var fotoBase64 = await _db.AutenticacionFacial
+            .Where(a => a.UsuarioId == usuarioId && a.Activo)
+            .OrderByDescending(a => a.FechaCreacion)
+            .Select(a => a.ImagenReferencia)
+            .FirstOrDefaultAsync();
+
+        if (string.IsNullOrWhiteSpace(fotoBase64))
+            return null;
+
+        var pure = StripDataUrlPrefix(fotoBase64);
+        try
+        {
+            return Convert.FromBase64String(pure);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    // Quita el prefijo de data URL si viene así: "data:image/png;base64,...."
+    private static string StripDataUrlPrefix(string input)
+    {
+        const string marker = ";base64,";
+        var idx = input.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+        return idx >= 0 ? input[(idx + marker.Length)..] : input;
     }
 }

@@ -8,4 +8,7 @@ public interface IAuthService
     Task<AuthResponse> RegisterAsync(RegisterRequest dto);
     Task<AuthResponse> LoginAsync(LoginRequest dto);
     Task LogoutAsync(string bearerToken);
+
+    Task<AuthResponse> LoginByCarnetQrAsync(string codigoQr);
+
 }

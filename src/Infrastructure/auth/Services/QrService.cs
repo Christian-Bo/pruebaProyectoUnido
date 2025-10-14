@@ -16,30 +16,19 @@ public interface IQrService
     Task<bool> InvalidateQrAsync(int usuarioId, CancellationToken ct = default);
     string ComputeSha256(string input);
 
-    // ====== NUEVOS (LOGIN POR QR) ======
+    // ====== NUEVO: Login usando QR de CARNET (permanente) ======
     /// <summary>
-    /// Crea un QR temporal de login que contiene USR, PWDH (password_hash actual),
-    /// TS (timestamp unix) y NONCE. Se guarda en codigos_qr (activo=1).
-    /// Devuelve el texto crudo para renderizar el QR en el frontend.
-    /// 'ttl' es el tiempo de vida máximo que esperas validar (recomendado 60-120s).
+    /// Permite iniciar sesión con el QR del carnet (permanente).
+    /// No invalida el QR; únicamente verifica que exista, esté activo
+    /// y que el usuario asociado esté activo. Devuelve el Usuario si es válido; null si no.
     /// </summary>
-    Task<string> CreateLoginCredentialQrAsync(int usuarioId, TimeSpan ttl, CancellationToken ct = default);
-
-    /// <summary>
-    /// Valida y consume (desactiva) un QR de login. Devuelve el usuario si es válido; null si no.
-    /// Importante: el QR de login expira (validado por TS interno) y es de un solo uso.
-    /// </summary>
-    Task<Usuario?> TryConsumeLoginQrAsync(string rawQr, CancellationToken ct = default);
+    Task<Usuario?> TryLoginWithCarnetQrAsync(string codigoQr, CancellationToken ct = default);
 }
 
 public class QrService : IQrService
 {
     private readonly AppDbContext _db;
     public QrService(AppDbContext db) { _db = db; }
-
-    // Límite máximo de edad permitido para QR de login (en segundos).
-    // No afecta al QR de carnet, que es permanente.
-    private const int LOGIN_QR_MAX_AGE_SECONDS = 120;
 
     /// <summary>
     /// Obtiene un QR activo o crea uno nuevo para el usuario.
@@ -135,7 +124,7 @@ public class QrService : IQrService
     private static string GenerateSecurePayload(int usuarioId)
     {
         // 16 bytes aleatorios crípticamente seguros → HEX
-        Span<byte> rnd = stackalloc byte[16];
+        var rnd = new byte[16];
         RandomNumberGenerator.Fill(rnd);
         var rndHex = Convert.ToHexString(rnd);
 
@@ -145,87 +134,28 @@ public class QrService : IQrService
         return $"QR-{usuarioId}-{ticks}-{rndHex}";
     }
 
-    // ===================== NUEVOS (LOGIN POR QR) =====================
+    // ===================== NUEVO: LOGIN con QR de CARNET =====================
 
     /// <summary>
-    /// Crea un QR temporal de login con credenciales "USR" + "PWDH" (hash actual),
-    /// más TS (timestamp unix) y NONCE. Se guarda en 'codigos_qr' (activo=1).
-    /// El 'ttl' recomendado es 60-120s. El frontend renderiza este string como QR.
-    /// NO afecta al QR de carnet.
+    /// Permite iniciar sesión con el QR del carnet (permanente).
+    /// - Busca por 'codigo_qr' y 'activo=1'
+    /// - Incluye el Usuario y verifica que esté activo
+    /// - NO invalida el QR (el carnet sigue siendo válido)
+    /// Devuelve el Usuario si todo es válido; si no, null.
     /// </summary>
-    public async Task<string> CreateLoginCredentialQrAsync(int usuarioId, TimeSpan ttl, CancellationToken ct = default)
+    public async Task<Usuario?> TryLoginWithCarnetQrAsync(string codigoQr, CancellationToken ct = default)
     {
-        var user = await _db.Usuarios.FirstOrDefaultAsync(u => u.Id == usuarioId && u.Activo, ct);
-        if (user is null) throw new InvalidOperationException("Usuario no encontrado o inactivo.");
+        if (string.IsNullOrWhiteSpace(codigoQr)) return null;
 
-        var ts = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-        var nonceBytes = new byte[8];
-        RandomNumberGenerator.Fill(nonceBytes);
-        var nonce = Convert.ToHexString(nonceBytes);
-
-        // Payload con "credenciales" (usuario + hash de contraseña ya guardado)
-        // Formato: LOGIN|USR=<usuario>|PWDH=<password_hash>|TS=<unix>|NONCE=<hex>
-        var code = $"LOGIN|USR={user.UsuarioNombre}|PWDH={user.PasswordHash}|TS={ts}|NONCE={nonce}";
-        var hash = ComputeSha256(code);
-
-        // Guardar en la misma tabla 'codigos_qr' SIN cambiar el esquema
-        var row = new CodigoQr
-        {
-            UsuarioId = user.Id,
-            Codigo = code,
-            QrHash = hash,
-            Activo = true
-        };
-        _db.CodigosQr.Add(row);
-        await _db.SaveChangesAsync(ct);
-
-        // Nota: el TTL se validará al consumir (TryConsumeLoginQrAsync) usando el TS interno.
-        return code;
-    }
-
-    /// <summary>
-    /// Valida y consume (desactiva) un QR de login.
-    /// Reglas: debe existir y estar activo; formato LOGIN|...; TS vigente (<= LOGIN_QR_MAX_AGE_SECONDS);
-    /// usuario activo; y PWDH igual al hash actual de la tabla 'usuarios'.
-    /// Al ser de un solo uso, se marca Activo=false al consumir.
-    /// </summary>
-    public async Task<Usuario?> TryConsumeLoginQrAsync(string rawQr, CancellationToken ct = default)
-    {
-        if (string.IsNullOrWhiteSpace(rawQr)) return null;
-        if (!rawQr.StartsWith("LOGIN|", StringComparison.Ordinal)) return null;
-
-        // Debe existir y estar activo en la tabla
-        var hash = ComputeSha256(rawQr);
-        var qr = await _db.CodigosQr
+        // Usamos 'codigo' porque tienes índice en 'codigo_qr' (más rápido que buscar por hash en tu esquema actual)
+        var row = await _db.CodigosQr
             .Include(q => q.Usuario)
-            .FirstOrDefaultAsync(q => q.QrHash == hash && q.Activo, ct);
+            .FirstOrDefaultAsync(q => q.Codigo == codigoQr && q.Activo, ct);
 
-        if (qr is null || qr.Usuario is null || !qr.Usuario.Activo) return null;
+        if (row is null || row.Usuario is null) return null;
+        if (!row.Usuario.Activo) return null;
 
-        // Parseo simple: LOGIN|USR=...|PWDH=...|TS=...|NONCE=...
-        string? usr = null, pwdh = null, tsStr = null;
-        foreach (var part in rawQr.Split('|', StringSplitOptions.RemoveEmptyEntries))
-        {
-            if (part.StartsWith("USR=",  StringComparison.Ordinal)) usr  = part[4..];
-            else if (part.StartsWith("PWDH=", StringComparison.Ordinal)) pwdh = part[5..];
-            else if (part.StartsWith("TS=",   StringComparison.Ordinal)) tsStr = part[3..];
-        }
-        if (usr is null || pwdh is null || tsStr is null) return null;
-
-        // Vigencia: se valida con el TS interno (máx LOGIN_QR_MAX_AGE_SECONDS)
-        if (!long.TryParse(tsStr, out var tsUnix)) return null;
-        var age = DateTimeOffset.UtcNow.ToUnixTimeSeconds() - tsUnix;
-        if (age < 0 || age > LOGIN_QR_MAX_AGE_SECONDS) return null; // vencido
-
-        // Debe coincidir usuario y hash actual de contraseña
-        var user = qr.Usuario;
-        if (!string.Equals(user.UsuarioNombre, usr, StringComparison.OrdinalIgnoreCase)) return null;
-        if (!string.Equals(user.PasswordHash,  pwdh, StringComparison.OrdinalIgnoreCase)) return null;
-
-        // Consumir (invalidar) este QR de login
-        qr.Activo = false;
-        await _db.SaveChangesAsync(ct);
-
-        return user;
+        // No lo desactivamos: el carnet debe quedar siempre usable
+        return row.Usuario;
     }
 }

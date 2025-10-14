@@ -17,6 +17,15 @@ namespace Auth.Infrastructure.Services
             string userName,
             string email,
             string qrPayload);
+
+        // ====== NUEVOS: con foto opcional ======
+        byte[] CreateCardPdf(string nombreCompleto, string usuario, string email, string qrContenido, byte[]? fotoBytes);
+        (string FileName, byte[] Content, string ContentType) GenerateRegistrationPdf(
+            string fullName,
+            string userName,
+            string email,
+            string qrPayload,
+            byte[]? fotoBytes);
     }
 
     public class QrCardGenerator : IQrCardGenerator
@@ -32,7 +41,7 @@ namespace Auth.Infrastructure.Services
 
         public byte[] CreateCardPdf(string nombreCompleto, string usuario, string email, string qrContenido)
         {
-            return RenderCard(nombreCompleto, usuario, email, qrContenido);
+            return RenderCard(nombreCompleto, usuario, email, qrContenido, null);
         }
 
         public (string FileName, byte[] Content, string ContentType) GenerateRegistrationPdf(
@@ -41,11 +50,28 @@ namespace Auth.Infrastructure.Services
             string email,
             string qrPayload)
         {
-            var bytes = RenderCard(fullName, userName, email, qrPayload);
+            var bytes = RenderCard(fullName, userName, email, qrPayload, null);
             return ($"QR-{userName}.pdf", bytes, "application/pdf");
         }
 
-        private static byte[] RenderCard(string nombreCompleto, string usuario, string email, string qrContenido)
+        // ====== NUEVOS: con foto opcional ======
+        public byte[] CreateCardPdf(string nombreCompleto, string usuario, string email, string qrContenido, byte[]? fotoBytes)
+        {
+            return RenderCard(nombreCompleto, usuario, email, qrContenido, fotoBytes);
+        }
+
+        public (string FileName, byte[] Content, string ContentType) GenerateRegistrationPdf(
+            string fullName,
+            string userName,
+            string email,
+            string qrPayload,
+            byte[]? fotoBytes)
+        {
+            var bytes = RenderCard(fullName, userName, email, qrPayload, fotoBytes);
+            return ($"QR-{userName}.pdf", bytes, "application/pdf");
+        }
+
+        private static byte[] RenderCard(string nombreCompleto, string usuario, string email, string qrContenido, byte[]? fotoBytes)
         {
             // 1) QR: usa la sobrecarga simple para evitar dependencias de System.Drawing
             using var qrGen = new QRCodeGenerator();
@@ -78,10 +104,10 @@ namespace Auth.Infrastructure.Services
 
                         col.Item().LineHorizontal(0.7f).LineColor(BORDER);
 
-                        // Cuerpo: info a la izquierda, QR a la derecha
+                        // Cuerpo: info (y foto si hay) a la izquierda, QR a la derecha
                         col.Item().Row(row =>
                         {
-                            // Izquierda (info)
+                            // Izquierda (info + foto)
                             row.RelativeItem().Column(c =>
                             {
                                 c.Item().Text(nombreCompleto).FontSize(16).SemiBold();
@@ -95,6 +121,18 @@ namespace Auth.Infrastructure.Services
                                     t.Span("Email: ").FontColor(MUTED);
                                     t.Span(email);
                                 });
+
+                                // Foto (opcional)
+                                if (fotoBytes is not null && fotoBytes.Length > 0)
+                                {
+                                    c.Item().PaddingTop(6).Text("Foto").FontColor(MUTED).FontSize(9);
+                                    // Marco simple de 90x90 aprox
+                                    c.Item().Width(90).Height(90)
+                                        .Border(1).BorderColor(BORDER)
+                                        .Padding(2)
+                                        .Image(fotoBytes);
+                                }
+
                                 c.Item().PaddingTop(6).Text("Pequeña información").FontColor(MUTED).FontSize(10);
                             });
 

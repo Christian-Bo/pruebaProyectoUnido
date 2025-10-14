@@ -1,9 +1,9 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-
+using Auth.Application.Contracts;
 using Auth.Infrastructure.Data;                      // AppDbContext
-using Auth.Infrastructure.Services;                 // QrService, QrCardGenerator
+using Auth.Infrastructure.Services;                 // IQrService, IQrCardGenerator
 using Auth.Infrastructure.Services.Notifications;   // INotificationService
 using Auth.Application.DTOs;
 
@@ -14,20 +14,23 @@ namespace Auth.API.Controllers;
 public class QrController : ControllerBase
 {
     private readonly AppDbContext _db;
-    private readonly QrService _qrService;                 // ← concreto
-    private readonly QrCardGenerator _card;                // ← concreto
+    private readonly IQrService _qrService;                 // ← interfaz (antes concreto)
+    private readonly IQrCardGenerator _card;                // ← interfaz (antes concreto)
     private readonly INotificationService _notify;
+    private readonly IAuthService _auth;                    // para hacer login con QR del carnet
 
     public QrController(
         AppDbContext db,
-        QrService qrService,
-        QrCardGenerator card,
-        INotificationService notify)
+        IQrService qrService,
+        IQrCardGenerator card,
+        INotificationService notify,
+        IAuthService auth)
     {
         _db = db;
         _qrService = qrService;
         _card = card;
         _notify = notify;
+        _auth = auth;
     }
 
     // Envía el carnet con QR al email del usuario
@@ -69,4 +72,19 @@ public class QrController : ControllerBase
 
         return Ok(new { message = "Carnet enviado al correo del usuario." });
     }
+
+    // ============ NUEVO: Login usando el QR del carnet ============
+    [HttpPost("login-qr/carnet")]
+    [AllowAnonymous]
+    public async Task<ActionResult<AuthResponse>> LoginConCarnet([FromBody] QrCarnetLoginRequest dto)
+    {
+        if (string.IsNullOrWhiteSpace(dto?.CodigoQr))
+            return BadRequest("Código QR requerido.");
+
+        var resp = await _auth.LoginByCarnetQrAsync(dto.CodigoQr);
+        return Ok(resp);
+    }
+
+    // DTO local para el login por QR del carnet (si ya tienes uno global, puedes usarlo)
+    public record QrCarnetLoginRequest(string CodigoQr);
 }

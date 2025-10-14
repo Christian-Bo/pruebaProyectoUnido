@@ -1,6 +1,4 @@
-namespace Auth.Application.DTOs;
-
-public class QrSendRequest
+namespace Auth.Application.DTOs
 {
-    public string UsuarioOrEmail { get; set; } = default!;
+    public record QrSendRequest(string UsuarioOrEmail);
 }
