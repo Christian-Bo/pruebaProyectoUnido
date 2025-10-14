@@ -1,11 +1,11 @@
 using Auth.Application.Contracts;
-using BCrypt.Net;
 using Microsoft.EntityFrameworkCore;
 using Auth.Domain.Entities;
 using Auth.Infrastructure.Data;
 using Auth.Application.DTOs;
 using System.Security.Claims;
 using Auth.Infrastructure.Services.Notifications;
+using System.Data.Common;
 
 namespace Auth.Infrastructure.Services;
 
@@ -17,7 +17,6 @@ public class AuthService : IAuthService
     private readonly IQrCardGenerator _card;
     private readonly INotificationService _notify;
 
-    // ⬇️ Inyectamos DB, JWT, QR, generador de carnet y notificaciones (Gmail/SMTP)
     public AuthService(
         AppDbContext db,
         IJwtTokenService jwt,
@@ -32,13 +31,53 @@ public class AuthService : IAuthService
         _notify = notify;
     }
 
-    // RegisterAsync valida duplicados, hashea con BCrypt, envía carnet con QR y hace login automático
+    /// <summary>
+    /// Calcula el hash usando la función de MySQL: SELECT fn_encriptar_password(@p)
+    /// </summary>
+    private async Task<string> DbHashAsync(string plain)
+    {
+        // Opción compatible con Pomelo y segura (parametrizada)
+        var conn = _db.Database.GetDbConnection();
+        var shouldClose = false;
+
+        if (conn.State != System.Data.ConnectionState.Open)
+        {
+            await conn.OpenAsync();
+            shouldClose = true;
+        }
+
+        try
+        {
+            await using var cmd = conn.CreateCommand();
+            cmd.CommandText = "SELECT fn_encriptar_password(@p)";
+            var p = cmd.CreateParameter();
+            p.ParameterName = "@p";
+            p.Value = plain ?? string.Empty;
+            cmd.Parameters.Add(p);
+
+            var obj = await cmd.ExecuteScalarAsync();
+            var hash = obj?.ToString();
+            if (string.IsNullOrWhiteSpace(hash))
+                throw new InvalidOperationException("fn_encriptar_password devolvió vacío.");
+
+            return hash!;
+        }
+        finally
+        {
+            if (shouldClose)
+            {
+                await conn.CloseAsync();
+            }
+        }
+    }
+
+    // Registra usuario, hasheando en BD, genera carnet QR y hace login automático
     public async Task<AuthResponse> RegisterAsync(RegisterRequest dto)
     {
         if (await _db.Usuarios.AnyAsync(u => u.UsuarioNombre == dto.Usuario || u.Email == dto.Email))
             throw new InvalidOperationException("Usuario o email ya existen.");
 
-        var hash = BCrypt.Net.BCrypt.HashPassword(dto.Password, workFactor: 12);
+        var hash = await DbHashAsync(dto.Password);
 
         var user = new Usuario
         {
@@ -87,8 +126,8 @@ public class AuthService : IAuthService
         await tx.CommitAsync();
         return resp;
     }
-    
-    // Búsqueda por usuario/email, verificación BCrypt y login
+
+    // Login comparando hash calculado por la función de BD
     public async Task<AuthResponse> LoginAsync(LoginRequest dto)
     {
         var user = await _db.Usuarios
@@ -98,13 +137,16 @@ public class AuthService : IAuthService
         if (user is null || !user.Activo)
             throw new UnauthorizedAccessException("Credenciales inválidas.");
 
-        var ok = BCrypt.Net.BCrypt.Verify(dto.Password, user.PasswordHash);
-        if (!ok) throw new UnauthorizedAccessException("Credenciales inválidas.");
+        var incoming = await DbHashAsync(dto.Password);
+
+        // SHA2 devuelve hex; comparación case-insensitive por seguridad
+        if (!string.Equals(incoming, user.PasswordHash, StringComparison.OrdinalIgnoreCase))
+            throw new UnauthorizedAccessException("Credenciales inválidas.");
 
         return await LoginInternalAsync(user, MetodoLogin.password);
     }
 
-    // Toma el Bearer token, calcula SHA-256 y marca la sesión como inactiva.
+    // Cierra sesión invalidando por hash del token
     public async Task LogoutAsync(string bearerToken)
     {
         var token = bearerToken?.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) == true
@@ -113,7 +155,6 @@ public class AuthService : IAuthService
 
         if (string.IsNullOrWhiteSpace(token)) return;
 
-        // No guarda el token en claro; compara por hash y desactiva la sesión.
         var hash = _jwt.ComputeSha256(token);
         var sesion = await _db.Sesiones.FirstOrDefaultAsync(s => s.SessionTokenHash == hash && s.Activa);
         if (sesion != null)
@@ -125,7 +166,6 @@ public class AuthService : IAuthService
 
     private async Task<AuthResponse> LoginInternalAsync(Usuario user, MetodoLogin metodo)
     {
-        // Claims mínimas
         var claims = new[]
         {
             new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
@@ -136,7 +176,6 @@ public class AuthService : IAuthService
         var (token, jti) = _jwt.CreateToken(claims);
         var tokenHash = _jwt.ComputeSha256(token);
 
-        // Crear registro de sesión
         _db.Sesiones.Add(new Sesion
         {
             UsuarioId = user.Id,
@@ -147,19 +186,6 @@ public class AuthService : IAuthService
 
         await _db.SaveChangesAsync();
 
-        /*
-        try
-        {
-            var body = $"Hola {user.NombreCompleto},\n\n" +
-                       $"Tu token (JWT) de PRUEBA es:\n\n{token}\n\n" +
-                       $"Vence en {60} minutos.\n" +
-                       $"(No compartas este token en producción)";
-            await _notify.SendEmailAsync(user.Email, "Tu token de PRUEBA", body);
-        }
-        catch { }
-        */
-
-        // Devuelve el token y datos del usuario
         return new AuthResponse
         {
             AccessToken = token,
