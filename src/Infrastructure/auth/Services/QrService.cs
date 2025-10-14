@@ -12,6 +12,9 @@ public interface IQrService
     Task<CodigoQr?> ValidateQrAsync(string codigoQr, CancellationToken ct = default);
     Task<bool> InvalidateQrAsync(int usuarioId, CancellationToken ct = default);
     string ComputeSha256(string input);
+
+    
+    
 }
 
 public class QrService : IQrService
