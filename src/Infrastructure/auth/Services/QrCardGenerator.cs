@@ -22,27 +22,29 @@ namespace Auth.Infrastructure.Services
 
     public class QrCardGenerator : IQrCardGenerator
     {
-        // ===== Paleta UMG =====
+        // ===== Paleta derivada del escudo UMG =====
+        // Rojo aro externo
         private const string UMG_RED   = "#B91C1C";
+        // Azul fondo escudo
         private const string UMG_BLUE  = "#0B63A6";
+        // Dorado de la cinta (texto del lema)
         private const string UMG_GOLD  = "#D9B24C";
+        // Marfil / papel
         private const string UMG_IVORY = "#FFF8E6";
+        // Tinta
         private const string INK       = "#102A43";
         private const string MUTED     = "#5B7083";
 
-        // ===== Tamaño tarjeta (ligeramente más grande para evitar overflow) =====
-        private const float CARD_WIDTH  = 400f;  // antes 370
-        private const float CARD_HEIGHT = 260f;  // antes 250
+        // Tamaño tarjeta (una sola página, evita desbordes)
+        private const float CARD_WIDTH  = 370f;  // pt
+        private const float CARD_HEIGHT = 250f;  // pt
 
-        // ===== Layout =====
-        private const float LEFT_BAR_WIDTH = 138f; // antes 124
-        private const float LOGO_BOX_W     = 78f;
-        private const float LOGO_BOX_H     = 78f;  // altura fija -> evita crecer
-        private const float PHOTO_BOX_W    = 100f;
-        private const float PHOTO_BOX_H    = 132f; // altura fija -> evita crecer
-        private const float QR_BOX_W       = 112f;
+        // Layout
+        private const float LEFT_BAR_WIDTH = 124f;
+        private const float PHOTO_BOX_W    = 98f;
+        private const float QR_BOX_W       = 108f;
 
-        // Ruta del logo (opcional). Coloca tu imagen en Auth.Infrastructure/branding/umg-logo.png
+        // Ruta del logo dentro del output
         private static readonly string LogoPath =
             Path.Combine(AppContext.BaseDirectory, "branding", "umg-logo.png");
 
@@ -56,6 +58,7 @@ namespace Auth.Infrastructure.Services
                 QuestPDF.Settings.EnableDebugging = true;
         }
 
+        // ====== Firmas existentes (no cambies llamadas) ======
         public byte[] CreateCardPdf(string nombreCompleto, string usuario, string email, string qrContenido)
             => RenderCard(nombreCompleto, usuario, email, qrContenido, null);
 
@@ -76,10 +79,11 @@ namespace Auth.Infrastructure.Services
             return ($"QR-{userName}.pdf", bytes, "application/pdf");
         }
 
+        // ============= Render =============
         private static byte[] RenderCard(
             string nombreCompleto, string usuario, string email, string qrContenido, byte[]? fotoBytes)
         {
-            // QR en PNG
+            // QR -> PNG en memoria
             using var qrGen = new QRCodeGenerator();
             var qrData = qrGen.CreateQrCode(qrContenido, QRCodeGenerator.ECCLevel.M);
             var qrPng  = new PngByteQRCode(qrData).GetGraphic(9);
@@ -94,18 +98,18 @@ namespace Auth.Infrastructure.Services
 
                     page.Content().Row(row =>
                     {
-                        // ===== IZQUIERDA =====
+                        // ========== IZQUIERDA ==========
                         row.ConstantItem(LEFT_BAR_WIDTH).Padding(8).Background(UMG_BLUE).Column(left =>
                         {
-                            // Bloque superior (logo + nombre UMG) con alturas capadas
+                            // Marco superior con rojo y filete dorado
                             left.Item().Border(2).BorderColor(UMG_RED).Background(UMG_BLUE)
                                 .Padding(4).Column(c =>
                                 {
-                                    // Logo (máx 78x78)
-                                    c.Item().AlignCenter().Width(LOGO_BOX_W).Height(LOGO_BOX_H).Element(e =>
+                                    // Logo si existe, si no, sello UMG
+                                    c.Item().AlignCenter().Element(e =>
                                     {
                                         if (DefaultLogoBytes is { Length: > 0 })
-                                            e.Image(DefaultLogoBytes);   // se adapta al contenedor
+                                            e.Width(70).Image(DefaultLogoBytes);  // mantiene proporción
                                         else
                                             e.Border(1).BorderColor(UMG_GOLD).Padding(4)
                                              .Text("UMG").FontColor(UMG_IVORY).SemiBold().AlignCenter();
@@ -115,28 +119,30 @@ namespace Auth.Infrastructure.Services
                                         .FontColor(UMG_IVORY).AlignCenter().SemiBold().FontSize(10);
                                 });
 
-                            // Foto (máx 100x132) con doble borde dorado/rojo
-                            left.Item().PaddingTop(8).PaddingBottom(2).Column(fc =>
+                            left.Item().PaddingTop(8).Column(fc =>
                             {
+                                // Marco foto con doble borde (dorado + rojo)
                                 fc.Item().Padding(2).Border(2).BorderColor(UMG_GOLD).Padding(2)
-                                  .Border(1).BorderColor(UMG_RED)
-                                  .Width(PHOTO_BOX_W).Height(PHOTO_BOX_H)
-                                  .Element(e =>
-                                  {
-                                      if (fotoBytes is { Length: > 0 })
-                                          e.Image(fotoBytes); // se adapta al contenedor
-                                      else
-                                          e.AlignCenter().AlignMiddle()
-                                           .Text("FOTO").FontColor(UMG_IVORY).FontSize(9);
-                                  });
+                                    .Border(1).BorderColor(UMG_RED)
+                                    .Width(PHOTO_BOX_W)
+                                    .Element(e =>
+                                    {
+                                        if (fotoBytes is { Length: > 0 })
+                                            e.Image(fotoBytes); // se ajusta al ancho
+                                        else
+                                            e.AlignCenter().AlignMiddle()
+                                             .Text("FOTO").FontColor(UMG_IVORY).FontSize(9);
+                                    });
                             });
                         });
 
-                        // ===== DERECHA =====
+                        // ========== DERECHA ==========
                         row.RelativeItem().Background(UMG_IVORY).Padding(10).Column(right =>
                         {
+                            // Barra superior roja
                             right.Item().Height(6).Background(UMG_RED);
 
+                            // Datos
                             right.Item().PaddingTop(6).Column(info =>
                             {
                                 info.Item().Text(t => { t.Span("Nombre: ").FontColor(MUTED);  t.Span(nombreCompleto).SemiBold(); });
@@ -144,8 +150,10 @@ namespace Auth.Infrastructure.Services
                                 info.Item().Text(t => { t.Span("Email: ").FontColor(MUTED);   t.Span(email); });
                             });
 
+                            // Separador dorado
                             right.Item().PaddingVertical(6).BorderBottom(1).BorderColor(UMG_GOLD);
 
+                            // QR + texto
                             right.Item().Row(qrRow =>
                             {
                                 qrRow.ConstantItem(QR_BOX_W)
@@ -154,11 +162,14 @@ namespace Auth.Infrastructure.Services
 
                                 qrRow.RelativeItem().PaddingLeft(8).Column(c =>
                                 {
-                                    c.Item().Text("Escanea para validar acceso").FontColor(MUTED).FontSize(9);
-                                    c.Item().Text("Acceso autorizado.\nPresente este carnet.").FontColor(MUTED).Italic().FontSize(9);
+                                    c.Item().Text("Escanea para validar acceso")
+                                            .FontColor(MUTED).FontSize(9);
+                                    c.Item().Text("Acceso autorizado.\nPresente este carnet.")
+                                            .FontColor(MUTED).Italic().FontSize(9);
                                 });
                             });
 
+                            // Franja inferior azul delgada
                             right.Item().PaddingTop(6).Height(4).Background(UMG_BLUE);
                         });
                     });
