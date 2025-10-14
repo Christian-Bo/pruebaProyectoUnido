@@ -124,7 +124,7 @@ public class AuthService : IAuthService
                 <p>Adjuntamos tu <b>carnet de acceso con código QR</b>.</p>
                 <p>Si no solicitaste este registro, contacta a soporte.</p>";
 
-            // ⬇️ Importante: NO pasar tupla; pasar parámetros sueltos (name, bytes, contentType)
+            // Importante: pasar parámetros sueltos (name, bytes, contentType)
             await _notify.SendEmailAsync(
                 user.Email,
                 "Tu carnet de acceso con código QR",
@@ -134,7 +134,11 @@ public class AuthService : IAuthService
                 pdf.ContentType
             );
         }
-        catch { /* log opcional */ }
+        catch (Exception ex)
+        {
+            // log opcional
+            Console.WriteLine($"[MAIL] Error enviando carnet: {ex.Message}");
+        }
 
         var resp = await LoginInternalAsync(user, MetodoLogin.password);
 
@@ -231,44 +235,78 @@ public class AuthService : IAuthService
 
     // ---------- Helpers privados ----------
 
-    // Lee la imagen (Base64) más reciente y activa desde autenticacion_facial y la convierte a bytes.
-    // Tolerante: limpia data-URL, espacios, saltos de línea y padding.
+    // Lee la imagen (Base64) más reciente y activa desde autenticacion_facial.
+    // Tolerante: limpia data-URL, espacios, saltos de línea y padding. Con logs para Railway.
     private async Task<byte[]?> TryGetUserPhotoBytesAsync(int usuarioId)
     {
-        var b64 = await _db.AutenticacionFacial
-            .Where(a => a.UsuarioId == usuarioId && a.Activo)
-            .OrderByDescending(a => a.FechaCreacion)
-            .Select(a => a.ImagenReferencia)
-            .FirstOrDefaultAsync();
-
-        if (string.IsNullOrWhiteSpace(b64))
-            return null;
-
-        b64 = StripDataUrlPrefix(b64);
-        b64 = b64.Trim()
-                 .Replace("\r", "", StringComparison.Ordinal)
-                 .Replace("\n", "", StringComparison.Ordinal)
-                 .Replace(" ", "+", StringComparison.Ordinal);
-        var mod = b64.Length % 4;
-        if (mod != 0) b64 = b64.PadRight(b64.Length + (4 - mod), '=');
-
         try
         {
-            return Convert.FromBase64String(b64);
-        }
-        catch
-        {
+            var row = await _db.AutenticacionFacial
+                .Where(a => a.UsuarioId == usuarioId && a.Activo)
+                .OrderByDescending(a => a.FechaCreacion)
+                .Select(a => new { a.Id, a.ImagenReferencia })
+                .FirstOrDefaultAsync();
+
+            if (row is null)
+            {
+                Console.WriteLine($"[FOTO] No hay ACTIVA para usuario={usuarioId}. Buscando última...");
+                row = await _db.AutenticacionFacial
+                    .Where(a => a.UsuarioId == usuarioId)
+                    .OrderByDescending(a => a.FechaCreacion)
+                    .Select(a => new { a.Id, a.ImagenReferencia })
+                    .FirstOrDefaultAsync();
+
+                if (row is null)
+                {
+                    Console.WriteLine($"[FOTO] No existe ninguna fila en autenticacion_facial para usuario={usuarioId}.");
+                    return null;
+                }
+            }
+
+            var len = row.ImagenReferencia?.Length ?? 0;
+            Console.WriteLine($"[FOTO] usuario={usuarioId} filaId={row.Id} lenBase64={len}");
+
+            if (string.IsNullOrWhiteSpace(row.ImagenReferencia))
+                return null;
+
+            string b64 = StripDataUrlPrefix(row.ImagenReferencia!);
+            b64 = b64.Trim()
+                     .Replace("\r", "", StringComparison.Ordinal)
+                     .Replace("\n", "", StringComparison.Ordinal)
+                     .Replace(" ", "+", StringComparison.Ordinal);
+
+            var mod = b64.Length % 4;
+            if (mod != 0) b64 = b64.PadRight(b64.Length + (4 - mod), '=');
+
             try
             {
-                b64 = b64.Replace('-', '+').Replace('_', '/');
-                var mod2 = b64.Length % 4;
-                if (mod2 != 0) b64 = b64.PadRight(b64.Length + (4 - mod2), '=');
-                return Convert.FromBase64String(b64);
+                var bytes = Convert.FromBase64String(b64);
+                Console.WriteLine($"[FOTO] Decodificación OK. bytes={bytes.Length}");
+                return bytes;
             }
-            catch
+            catch (Exception ex1)
             {
-                return null;
+                Console.WriteLine($"[FOTO] Base64 estándar falló: {ex1.Message}. Intentando url-safe...");
+                try
+                {
+                    b64 = b64.Replace('-', '+').Replace('_', '/');
+                    var mod2 = b64.Length % 4;
+                    if (mod2 != 0) b64 = b64.PadRight(b64.Length + (4 - mod2), '=');
+                    var bytes2 = Convert.FromBase64String(b64);
+                    Console.WriteLine($"[FOTO] Decodificación url-safe OK. bytes={bytes2.Length}");
+                    return bytes2;
+                }
+                catch (Exception ex2)
+                {
+                    Console.WriteLine($"[FOTO] Decodificación fallida definitivamente: {ex2.Message}");
+                    return null;
+                }
             }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[FOTO] Error consultando foto usuario={usuarioId}: {ex.Message}");
+            return null;
         }
     }
 

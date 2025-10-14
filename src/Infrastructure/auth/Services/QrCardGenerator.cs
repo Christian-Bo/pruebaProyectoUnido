@@ -85,10 +85,12 @@ namespace Auth.Infrastructure.Services
                         col.Item().Row(row =>
                         {
                             row.RelativeItem().Text("Información usuarios").SemiBold().FontSize(12);
-                            // Badge “UNIVERSIDAD” (si luego quieres logo, podemos agregar overload con logoBytes)
-                            row.ConstantItem(110).Border(1).BorderColor("#38bdf8")
-                               .Background("#0f172a").PaddingVertical(3).PaddingHorizontal(8)
-                               .AlignRight()
+
+                            // Badge “UNIVERSIDAD” (sin AlignRight para evitar errores de versiones)
+                            row.ConstantItem(110)
+                               .Border(1).BorderColor("#38bdf8")
+                               .Background("#0f172a")
+                               .PaddingVertical(3).PaddingHorizontal(8)
                                .Text("UNIVERSIDAD").FontColor("#38bdf8").FontSize(9).SemiBold();
                         });
 
@@ -102,7 +104,7 @@ namespace Auth.Infrastructure.Services
                             {
                                 c.Item().Row(infoRow =>
                                 {
-                                    // Foto (opcional) en marco reservado 100x110
+                                    // Foto (marco reservado 100x110)
                                     infoRow.ConstantItem(100).Column(fc =>
                                     {
                                         fc.Item().Text("Foto").FontColor(MUTED).FontSize(9);
@@ -112,7 +114,7 @@ namespace Auth.Infrastructure.Services
                                             .Element(e =>
                                             {
                                                 if (fotoBytes is { Length: > 0 })
-                                                    e.Image(fotoBytes);
+                                                    e.Image(fotoBytes); // se adapta al contenedor
                                                 else
                                                     e.Text("Sin foto").FontColor(MUTED).FontSize(9);
                                             });
