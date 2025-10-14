@@ -1,93 +1,89 @@
 using QRCoder;
 using QuestPDF.Fluent;
-using QuestPDF.Helpers;
 using QuestPDF.Infrastructure;
 using System;
+using System.IO;
 
 namespace Auth.Infrastructure.Services
 {
     public interface IQrCardGenerator
     {
-        // Compatibilidad (sin foto / sin logo)
         byte[] CreateCardPdf(string nombreCompleto, string usuario, string email, string qrContenido);
+
         (string FileName, byte[] Content, string ContentType) GenerateRegistrationPdf(
             string fullName, string userName, string email, string qrPayload);
 
-        // Con foto (compat)
+        // con foto opcional
         byte[] CreateCardPdf(string nombreCompleto, string usuario, string email, string qrContenido, byte[]? fotoBytes);
+
         (string FileName, byte[] Content, string ContentType) GenerateRegistrationPdf(
             string fullName, string userName, string email, string qrPayload, byte[]? fotoBytes);
-
-        // NUEVO: con branding (nombre y logo opcional)
-        (string FileName, byte[] Content, string ContentType) GenerateRegistrationPdf(
-            string fullName, string userName, string email, string qrPayload, byte[]? fotoBytes,
-            string universityName, byte[]? logoBytes);
     }
 
     public class QrCardGenerator : IQrCardGenerator
     {
-        // Paleta (tu referencia)
-        private const string DARK  = "#00382F";  // verde oscuro
-        private const string MID   = "#4E8F7E";  // verde medio
-        private const string SAND  = "#D9CDA8";  // beige
-        private const string IVORY = "#FFFAEE";  // marfil
-        private const string INK   = "#0B1C18";  // texto
-        private const string MUTED = "#56706A";  // texto secundario
+        // ===== Paleta derivada del escudo UMG =====
+        // Rojo aro externo
+        private const string UMG_RED   = "#B91C1C";
+        // Azul fondo escudo
+        private const string UMG_BLUE  = "#0B63A6";
+        // Dorado de la cinta (texto del lema)
+        private const string UMG_GOLD  = "#D9B24C";
+        // Marfil / papel
+        private const string UMG_IVORY = "#FFF8E6";
+        // Tinta
+        private const string INK       = "#102A43";
+        private const string MUTED     = "#5B7083";
 
-        // Tamaño MÁS AMPLIO para que todo quepa en 1 página
-        private const float CARD_WIDTH  = 360f;  // pt
-        private const float CARD_HEIGHT = 240f;  // pt
+        // Tamaño tarjeta (una sola página, evita desbordes)
+        private const float CARD_WIDTH  = 370f;  // pt
+        private const float CARD_HEIGHT = 250f;  // pt
 
         // Layout
-        private const float LEFT_BAR_WIDTH = 120f;
-        private const float PHOTO_BOX_W    = 96f;
-        private const float QR_BOX_WIDTH   = 100f;
+        private const float LEFT_BAR_WIDTH = 124f;
+        private const float PHOTO_BOX_W    = 98f;
+        private const float QR_BOX_W       = 108f;
+
+        // Ruta del logo dentro del output
+        private static readonly string LogoPath =
+            Path.Combine(AppContext.BaseDirectory, "branding", "umg-logo.png");
+
+        private static readonly byte[]? DefaultLogoBytes =
+            File.Exists(LogoPath) ? File.ReadAllBytes(LogoPath) : null;
 
         public QrCardGenerator()
         {
-            var dbg = Environment.GetEnvironmentVariable("QUESTPDF_DEBUG");
-            if (string.Equals(dbg, "true", StringComparison.OrdinalIgnoreCase))
-                QuestPDF.Settings.EnableDebugging = true;
-
             QuestPDF.Settings.License = LicenseType.Community;
+            if (string.Equals(Environment.GetEnvironmentVariable("QUESTPDF_DEBUG"), "true", StringComparison.OrdinalIgnoreCase))
+                QuestPDF.Settings.EnableDebugging = true;
         }
 
-        // ===== Firmas de compatibilidad =====
+        // ====== Firmas existentes (no cambies llamadas) ======
         public byte[] CreateCardPdf(string nombreCompleto, string usuario, string email, string qrContenido)
-            => RenderCard(nombreCompleto, usuario, email, qrContenido, null, "UMG", null);
+            => RenderCard(nombreCompleto, usuario, email, qrContenido, null);
 
         public (string FileName, byte[] Content, string ContentType) GenerateRegistrationPdf(
             string fullName, string userName, string email, string qrPayload)
         {
-            var bytes = RenderCard(fullName, userName, email, qrPayload, null, "UMG", null);
+            var bytes = RenderCard(fullName, userName, email, qrPayload, null);
             return ($"QR-{userName}.pdf", bytes, "application/pdf");
         }
 
         public byte[] CreateCardPdf(string nombreCompleto, string usuario, string email, string qrContenido, byte[]? fotoBytes)
-            => RenderCard(nombreCompleto, usuario, email, qrContenido, fotoBytes, "UMG", null);
+            => RenderCard(nombreCompleto, usuario, email, qrContenido, fotoBytes);
 
         public (string FileName, byte[] Content, string ContentType) GenerateRegistrationPdf(
             string fullName, string userName, string email, string qrPayload, byte[]? fotoBytes)
         {
-            var bytes = RenderCard(fullName, userName, email, qrPayload, fotoBytes, "UMG", null);
+            var bytes = RenderCard(fullName, userName, email, qrPayload, fotoBytes);
             return ($"QR-{userName}.pdf", bytes, "application/pdf");
         }
 
-        // ===== Nueva firma (con nombre y logo) =====
-        public (string FileName, byte[] Content, string ContentType) GenerateRegistrationPdf(
-            string fullName, string userName, string email, string qrPayload, byte[]? fotoBytes,
-            string universityName, byte[]? logoBytes)
-        {
-            var bytes = RenderCard(fullName, userName, email, qrPayload, fotoBytes, universityName, logoBytes);
-            return ($"QR-{userName}.pdf", bytes, "application/pdf");
-        }
-
-        // Render principal
+        // ============= Render =============
         private static byte[] RenderCard(
-            string nombreCompleto, string usuario, string email, string qrContenido,
-            byte[]? fotoBytes, string universityName, byte[]? logoBytes)
+            string nombreCompleto, string usuario, string email, string qrContenido, byte[]? fotoBytes)
         {
-            // Generar QR
+            // QR -> PNG en memoria
             using var qrGen = new QRCodeGenerator();
             var qrData = qrGen.CreateQrCode(qrContenido, QRCodeGenerator.ECCLevel.M);
             var qrPng  = new PngByteQRCode(qrData).GetGraphic(9);
@@ -102,51 +98,51 @@ namespace Auth.Infrastructure.Services
 
                     page.Content().Row(row =>
                     {
-                        // -------- Columna izquierda (barra + logo + título + foto) --------
-                        row.ConstantItem(LEFT_BAR_WIDTH).Padding(8).Background(DARK).Column(left =>
+                        // ========== IZQUIERDA ==========
+                        row.ConstantItem(LEFT_BAR_WIDTH).Padding(8).Background(UMG_BLUE).Column(left =>
                         {
-                            // Logo (si viene)
-                            left.Item().AlignCenter().Element(e =>
-                            {
-                                if (logoBytes is { Length: > 0 })
-                                    e.Width(64).Image(logoBytes);
-                                else
-                                    e.Border(1).BorderColor(SAND).Padding(4)
-                                     .Text("UMG").FontColor(IVORY).SemiBold().AlignCenter();
-                            });
+                            // Marco superior con rojo y filete dorado
+                            left.Item().Border(2).BorderColor(UMG_RED).Background(UMG_BLUE)
+                                .Padding(4).Column(c =>
+                                {
+                                    // Logo si existe, si no, sello UMG
+                                    c.Item().AlignCenter().Element(e =>
+                                    {
+                                        if (DefaultLogoBytes is { Length: > 0 })
+                                            e.Width(70).Image(DefaultLogoBytes);  // mantiene proporción
+                                        else
+                                            e.Border(1).BorderColor(UMG_GOLD).Padding(4)
+                                             .Text("UMG").FontColor(UMG_IVORY).SemiBold().AlignCenter();
+                                    });
 
-                            // Nombre de la universidad
-                            left.Item().PaddingTop(6).Text(t =>
-                            {
-                                t.AlignCenter();
-                                t.Span(universityName?.ToUpperInvariant() ?? "UMG")
-                                 .FontColor(IVORY).SemiBold().FontSize(12);
-                            });
+                                    c.Item().PaddingTop(6).Text("UNIVERSIDAD\nMARIANO GÁLVEZ")
+                                        .FontColor(UMG_IVORY).AlignCenter().SemiBold().FontSize(10);
+                                });
 
-                            // Foto (solo ancho; altura fluye. Borde doble estilo credencial)
                             left.Item().PaddingTop(8).Column(fc =>
                             {
-                                fc.Item().Padding(2).Border(2).BorderColor(SAND).Padding(2)
-                                  .Border(1).BorderColor(IVORY)
-                                  .Width(PHOTO_BOX_W)
-                                  .Element(e =>
-                                  {
-                                      if (fotoBytes is { Length: > 0 })
-                                          e.Image(fotoBytes);
-                                      else
-                                          e.AlignCenter().AlignMiddle()
-                                           .Text("FOTO").FontColor(SAND).FontSize(9);
-                                  });
+                                // Marco foto con doble borde (dorado + rojo)
+                                fc.Item().Padding(2).Border(2).BorderColor(UMG_GOLD).Padding(2)
+                                    .Border(1).BorderColor(UMG_RED)
+                                    .Width(PHOTO_BOX_W)
+                                    .Element(e =>
+                                    {
+                                        if (fotoBytes is { Length: > 0 })
+                                            e.Image(fotoBytes); // se ajusta al ancho
+                                        else
+                                            e.AlignCenter().AlignMiddle()
+                                             .Text("FOTO").FontColor(UMG_IVORY).FontSize(9);
+                                    });
                             });
                         });
 
-                        // -------- Columna derecha (datos + QR) --------
-                        row.RelativeItem().Background(IVORY).Padding(10).Column(right =>
+                        // ========== DERECHA ==========
+                        row.RelativeItem().Background(UMG_IVORY).Padding(10).Column(right =>
                         {
-                            // Banda superior
-                            right.Item().Height(6).Background(MID);
+                            // Barra superior roja
+                            right.Item().Height(6).Background(UMG_RED);
 
-                            // Datos del usuario
+                            // Datos
                             right.Item().PaddingTop(6).Column(info =>
                             {
                                 info.Item().Text(t => { t.Span("Nombre: ").FontColor(MUTED);  t.Span(nombreCompleto).SemiBold(); });
@@ -154,24 +150,27 @@ namespace Auth.Infrastructure.Services
                                 info.Item().Text(t => { t.Span("Email: ").FontColor(MUTED);   t.Span(email); });
                             });
 
-                            // Separador
-                            right.Item().PaddingVertical(6).BorderBottom(1).BorderColor(SAND);
+                            // Separador dorado
+                            right.Item().PaddingVertical(6).BorderBottom(1).BorderColor(UMG_GOLD);
 
-                            // QR + leyenda
+                            // QR + texto
                             right.Item().Row(qrRow =>
                             {
-                                qrRow.ConstantItem(QR_BOX_WIDTH)
-                                     .Border(1).BorderColor(SAND).Padding(6)
+                                qrRow.ConstantItem(QR_BOX_W)
+                                     .Border(1).BorderColor(UMG_GOLD).Padding(6)
                                      .Element(e => e.Image(qrPng));
 
                                 qrRow.RelativeItem().PaddingLeft(8).Column(c =>
                                 {
-                                    c.Item().Text("Escanea para validar acceso").FontColor(MUTED).FontSize(9);
-                                    c.Item().Text("Acceso autorizado.\nPresente este carnet.").FontColor(MUTED).Italic().FontSize(9);
+                                    c.Item().Text("Escanea para validar acceso")
+                                            .FontColor(MUTED).FontSize(9);
+                                    c.Item().Text("Acceso autorizado.\nPresente este carnet.")
+                                            .FontColor(MUTED).Italic().FontSize(9);
                                 });
                             });
 
-                            // (sin barra inferior fija para no empujar contenido)
+                            // Franja inferior azul delgada
+                            right.Item().PaddingTop(6).Height(4).Background(UMG_BLUE);
                         });
                     });
                 });
