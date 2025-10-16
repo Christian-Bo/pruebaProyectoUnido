@@ -235,4 +235,18 @@ app.MapControllers().RequireCors("dev");
 app.MapMethods("{*path}", new[] { "OPTIONS" }, () => Results.NoContent())
    .RequireCors("dev");
 
+app.MapGet("/health/db", async (AppDbContext db) =>
+{
+    try
+    {
+        await db.Database.ExecuteSqlRawAsync("SELECT 1");
+        return Results.Ok(new { ok = true });
+    }
+    catch (Exception ex)
+    {
+        return Results.Problem(title: "DB error", detail: ex.Message, statusCode: 500);
+    }
+});
+
+
 app.Run();
