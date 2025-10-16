@@ -58,13 +58,27 @@ builder.Services.AddAuthentication(o =>
 builder.Services.AddAuthorization();
 
 // ===== CORS =====
-// Si prefieres listar orígenes: .WithOrigins("http://127.0.0.1:5500","http://localhost:3000")
+// Si prefieres listar orígenes exactos, puedes reemplazar SetIsOriginAllowed por .WithOrigins("https://front-end-automatas.vercel.app")
 builder.Services.AddCors(opt =>
 {
     opt.AddPolicy("dev", p => p
-        .AllowAnyOrigin()
+        .SetIsOriginAllowed(origin =>
+        {
+            try
+            {
+                var host = new Uri(origin).Host;
+                // Producción Vercel + previews y localhost
+                if (host.Equals("front-end-automatas.vercel.app", StringComparison.OrdinalIgnoreCase)) return true;
+                if (host.EndsWith(".vercel.app", StringComparison.OrdinalIgnoreCase)) return true;
+                if (host.Equals("localhost", StringComparison.OrdinalIgnoreCase)) return true;
+                if (host.Equals("127.0.0.1", StringComparison.OrdinalIgnoreCase)) return true;
+                return false;
+            }
+            catch { return false; }
+        })
         .AllowAnyHeader()
         .AllowAnyMethod()
+        // .AllowCredentials() // <-- SOLO si usas cookies; con JWT en header, déjalo comentado
     );
 });
 
@@ -120,26 +134,32 @@ var app = builder.Build();
 app.UseSwagger();
 app.UseSwaggerUI();
 
-app.UseHttpsRedirection();
-
 // ===== ORDEN =====
 app.UseRouting();
 
-// --- CORS: habilita y añade headers incluso en errores ---
+// --- CORS: debe ejecutarse ANTES de cualquier redirección o auth ---
 app.UseCors("dev");
+
+// (Opcional) si Railway termina TLS, evita redirecciones sin CORS.
+// Si igual quieres mantenerlo, colócalo DESPUÉS de UseCors para no perder los headers en 30x.
+app.UseHttpsRedirection();
 
 // (Capa ultra-defensiva: asegura encabezados y responde preflight OPTIONS)
 app.Use(async (ctx, next) =>
 {
-    // Agrega Access-Control-Allow-Origin siempre (para evitar proxies que quiten headers)
+    // Agrega Access-Control-Allow-Origin siempre (incluye errores/throw)
     var origin = ctx.Request.Headers.Origin.ToString();
     if (!string.IsNullOrEmpty(origin))
     {
-        // Como AllowAnyOrigin está activo y no usamos credenciales, devolvemos el mismo origin
-        ctx.Response.Headers["Access-Control-Allow-Origin"] = origin;
+        ctx.Response.Headers["Access-Control-Allow-Origin"] = origin; // refleja el origin permitido
         ctx.Response.Headers["Vary"] = "Origin";
-        ctx.Response.Headers["Access-Control-Allow-Headers"] = ctx.Request.Headers["Access-Control-Request-Headers"].ToString() ?? "Content-Type, Authorization";
-        ctx.Response.Headers["Access-Control-Allow-Methods"] = "GET,POST,PUT,DELETE,OPTIONS";
+        var reqHeaders = ctx.Request.Headers["Access-Control-Request-Headers"].ToString();
+        ctx.Response.Headers["Access-Control-Allow-Headers"] = string.IsNullOrEmpty(reqHeaders)
+            ? "Content-Type, Authorization"
+            : reqHeaders;
+        ctx.Response.Headers["Access-Control-Allow-Methods"] = "GET,POST,PUT,PATCH,DELETE,OPTIONS";
+        // Si habilitas credenciales en la policy, agrega también:
+        // ctx.Response.Headers["Access-Control-Allow-Credentials"] = "true";
     }
 
     // Preflight
