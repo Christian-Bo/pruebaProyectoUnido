@@ -11,6 +11,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using QuestPDF.Infrastructure;
+using Microsoft.AspNetCore.HttpOverrides; // <-- agregado para ForwardedHeaders
 
 QuestPDF.Settings.License = LicenseType.Community;
 
@@ -131,6 +132,31 @@ builder.Services.AddHttpClient<BiometricApiClient>((sp, c) =>
 
 var app = builder.Build();
 
+// ===== Encabezados reenviados (Railway/Proxy) =====
+app.UseForwardedHeaders(new ForwardedHeadersOptions
+{
+    ForwardedHeaders = ForwardedHeaders.XForwardedProto | ForwardedHeaders.XForwardedFor
+});
+
+// ===== Manejador global de excepciones con CORS (defensivo, mantiene headers en 500) =====
+app.UseExceptionHandler(errorApp =>
+{
+    errorApp.Run(async ctx =>
+    {
+        var origin = ctx.Request.Headers.Origin.ToString();
+        if (!string.IsNullOrEmpty(origin))
+        {
+            ctx.Response.Headers["Access-Control-Allow-Origin"] = origin;
+            ctx.Response.Headers["Vary"] = "Origin";
+            ctx.Response.Headers["Access-Control-Allow-Methods"] = "GET,POST,PUT,PATCH,DELETE,OPTIONS";
+            ctx.Response.Headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization";
+            // ctx.Response.Headers["Access-Control-Allow-Credentials"] = "true"; // si activas credenciales
+        }
+        ctx.Response.StatusCode = StatusCodes.Status500InternalServerError;
+        await ctx.Response.WriteAsync("Internal Server Error");
+    });
+});
+
 app.UseSwagger();
 app.UseSwaggerUI();
 
@@ -202,6 +228,11 @@ app.Use(async (ctx, next) =>
 
 app.UseAuthorization();
 
-app.MapControllers();
+// ===== Mapear controladores con CORS requerido =====
+app.MapControllers().RequireCors("dev");
+
+// ===== Respuesta global a OPTIONS (preflight) con CORS =====
+app.MapMethods("{*path}", new[] { "OPTIONS" }, () => Results.NoContent())
+   .RequireCors("dev");
 
 app.Run();
