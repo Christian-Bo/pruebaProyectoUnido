@@ -36,10 +36,10 @@ namespace Auth.Infrastructure.Services
 
         // ===== Layout =====
         private const float LEFT_BAR_WIDTH = 136f;
-        private const float LOGO_MAX_W     = 50f;
-        private const float LOGO_MAX_H     = 50f;
-        private const float PHOTO_MAX_W    = 80f;
-        private const float PHOTO_MAX_H    = 80f;
+        private const float LOGO_MAX_W     = 78f;
+        private const float LOGO_MAX_H     = 78f;
+        private const float PHOTO_MAX_W    = 100f;
+        private const float PHOTO_MAX_H    = 132f;
         private const float QR_BOX_W       = 112f;
 
         // Logo opcional (Auth.Infrastructure/branding/umg-logo.png)
