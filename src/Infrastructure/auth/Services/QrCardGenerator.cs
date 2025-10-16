@@ -35,12 +35,12 @@ namespace Auth.Infrastructure.Services
         private const float CARD_HEIGHT = 260f;
 
         // ===== Layout =====
-        private const float LEFT_BAR_WIDTH = 136f;
-        private const float LOGO_MAX_W     = 78f;
-        private const float LOGO_MAX_H     = 78f;
-        private const float PHOTO_MAX_W    = 100f;
-        private const float PHOTO_MAX_H    = 132f;
-        private const float QR_BOX_W       = 112f;
+        private const float LEFT_BAR_WIDTH = 132f;  // un poco más estrecho
+        private const float LOGO_MAX_W     = 68f;
+        private const float LOGO_MAX_H     = 68f;
+        private const float PHOTO_MAX_W    = 96f;   // sólo límites máximos (sin Width fijo)
+        private const float PHOTO_MAX_H    = 120f;
+        private const float QR_BOX_W       = 110f;
 
         // Logo opcional (Auth.Infrastructure/branding/umg-logo.png)
         private static readonly string LogoPath =
@@ -52,8 +52,9 @@ namespace Auth.Infrastructure.Services
         public QrCardGenerator()
         {
             QuestPDF.Settings.License = LicenseType.Community;
-            if (string.Equals(Environment.GetEnvironmentVariable("QUESTPDF_DEBUG"), "true", StringComparison.OrdinalIgnoreCase))
-                QuestPDF.Settings.EnableDebugging = true;
+            // Habilitar debug si lo necesitas:
+            // Environment.SetEnvironmentVariable("QUESTPDF_ENABLE_DEBUGGING", "true");
+            // QuestPDF.Settings.EnableDebugging = true;
         }
 
         public byte[] CreateCardPdf(string nombreCompleto, string usuario, string email, string qrContenido)
@@ -79,11 +80,12 @@ namespace Auth.Infrastructure.Services
         private static byte[] RenderCard(
             string nombreCompleto, string usuario, string email, string qrContenido, byte[]? fotoBytes)
         {
-            // QR en PNG
+            // 1) QR en PNG simple
             using var qrGen = new QRCodeGenerator();
             var qrData = qrGen.CreateQrCode(qrContenido, QRCodeGenerator.ECCLevel.M);
             var qrPng  = new PngByteQRCode(qrData).GetGraphic(9);
 
+            // 2) PDF
             var pdf = Document.Create(doc =>
             {
                 doc.Page(page =>
@@ -94,75 +96,87 @@ namespace Auth.Infrastructure.Services
 
                     page.Content().Row(row =>
                     {
-                        // ===== IZQUIERDA =====
+                        // ===== IZQUIERDA (fija) =====
                         row.ConstantItem(LEFT_BAR_WIDTH).Padding(8).Background(UMG_BLUE).Column(left =>
                         {
-                            // Logo + nombre (sin alturas fijas, con topes)
-                            left.Item().Border(2).BorderColor(UMG_RED).Background(UMG_BLUE)
-                                .Padding(4).Column(c =>
-                                {
-                                    c.Item().AlignCenter()
-                                        .Width(LOGO_MAX_W).MaxHeight(LOGO_MAX_H)
-                                        .Element(e =>
-                                        {
-                                            if (DefaultLogoBytes is { Length: > 0 })
-                                                e.Image(DefaultLogoBytes);  // se adapta al ancho y tope de alto
-                                            else
-                                                e.Border(1).BorderColor(UMG_GOLD).Padding(4)
-                                                 .Text("UMG").FontColor(UMG_IVORY).SemiBold().AlignCenter();
-                                        });
+                            left.Spacing(8);
 
-                                    c.Item().PaddingTop(6)
-                                        .Text("UNIVERSIDAD\nMARIANO GÁLVEZ")
-                                        .FontColor(UMG_IVORY).AlignCenter().SemiBold().FontSize(10);
+                            // Logo + nombre (sin Height fijas)
+                            left.Item().Border(1).BorderColor(UMG_IVORY).Padding(6).Column(c =>
+                            {
+                                c.Item().AlignCenter().Element(e =>
+                                {
+                                    if (DefaultLogoBytes is { Length: > 0 })
+                                        e.MaxWidth(LOGO_MAX_W).MaxHeight(LOGO_MAX_H).Image(DefaultLogoBytes);
+                                    else
+                                        e.Text("UMG").FontColor(UMG_IVORY).SemiBold().FontSize(14).AlignCenter();
                                 });
 
-                            // Foto (sin Height fijo; uso MaxHeight)
-                            left.Item().PaddingTop(8).Column(fc =>
+                                c.Item().PaddingTop(6)
+                                  .Text("UNIVERSIDAD\nMARIANO GÁLVEZ")
+                                  .FontColor(UMG_IVORY).AlignCenter().SemiBold().FontSize(10);
+                            });
+
+                            // Foto (todo flexible; sin Width fijo)
+                            left.Item().Column(fc =>
                             {
-                                fc.Item().Padding(2).Border(2).BorderColor(UMG_GOLD).Padding(2)
-                                  .Border(1).BorderColor(UMG_RED)
-                                  .Width(PHOTO_MAX_W)
-                                  .Element(e =>
-                                  {
-                                      if (fotoBytes is { Length: > 0 })
-                                          e.MaxHeight(PHOTO_MAX_H).Image(fotoBytes);
-                                      else
-                                          e.Height(96).AlignCenter().AlignMiddle()
-                                           .Text("FOTO").FontColor(UMG_IVORY).FontSize(9);
-                                  });
+                                fc.Spacing(4);
+                                fc.Item().Text("Foto").FontColor(UMG_IVORY).FontSize(9);
+                                fc.Item().Border(1).BorderColor(UMG_GOLD).Padding(4).Element(e =>
+                                {
+                                    if (fotoBytes is { Length: > 0 })
+                                    {
+                                        e.MaxWidth(PHOTO_MAX_W).MaxHeight(PHOTO_MAX_H).Image(fotoBytes);
+                                    }
+                                    else
+                                    {
+                                        // Placeholder con altura mínima (se puede encoger)
+                                        e.MinHeight(72).AlignCenter().AlignMiddle()
+                                         .Text("SIN FOTO").FontColor(UMG_IVORY).FontSize(9);
+                                    }
+                                });
                             });
                         });
 
-                        // ===== DERECHA =====
+                        // ===== DERECHA (flex) =====
                         row.RelativeItem().Background(UMG_IVORY).Padding(10).Column(right =>
                         {
-                            right.Item().Height(6).Background(UMG_RED);
+                            right.Spacing(8);
 
-                            right.Item().PaddingTop(6).Column(info =>
+                            // Barra superior (pequeña)
+                            right.Item().MinHeight(4).Background(UMG_RED);
+
+                            // Datos (sin alturas fijas)
+                            right.Item().Column(info =>
                             {
+                                info.Spacing(2);
                                 info.Item().Text(t => { t.Span("Nombre: ").FontColor(MUTED);  t.Span(nombreCompleto).SemiBold(); });
                                 info.Item().Text(t => { t.Span("Usuario: ").FontColor(MUTED); t.Span(usuario); });
                                 info.Item().Text(t => { t.Span("Email: ").FontColor(MUTED);   t.Span(email); });
                             });
 
-                            right.Item().PaddingVertical(6).BorderBottom(1).BorderColor(UMG_GOLD);
+                            right.Item().PaddingVertical(4).BorderBottom(1).BorderColor(UMG_GOLD);
 
+                            // QR + notas
                             right.Item().Row(qrRow =>
                             {
+                                // Caja QR (ancho fijo; alto se adapta)
                                 qrRow.ConstantItem(QR_BOX_W)
                                      .Border(1).BorderColor(UMG_GOLD).Padding(6)
-                                     .Element(e => e.Image(qrPng));   // escala a ancho disponible
+                                     .Element(e => e.Image(qrPng));
 
+                                // Texto al lado (flex)
                                 qrRow.RelativeItem().PaddingLeft(8).Column(c =>
                                 {
+                                    c.Spacing(2);
                                     c.Item().Text("Escanea para validar acceso").FontColor(MUTED).FontSize(9);
-                                    c.Item().Text("Acceso autorizado.\nPresente este carnet.")
+                                    c.Item().Text("Acceso autorizado. Presente este carnet.")
                                             .FontColor(MUTED).Italic().FontSize(9);
                                 });
                             });
 
-                            right.Item().PaddingTop(6).Height(4).Background(UMG_BLUE);
+                            // Barra inferior (muy pequeña)
+                            right.Item().MinHeight(3).Background(UMG_BLUE);
                         });
                     });
                 });
