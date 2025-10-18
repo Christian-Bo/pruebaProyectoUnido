@@ -1,46 +1,44 @@
 using System.Text;
 using System.Net.Http.Headers;
+using System.Threading.Channels;
+using System.Threading;
 
+// Infra
 using Auth.Application.Contracts;
 using Auth.Infrastructure.Data;
 using Auth.Infrastructure.Services;
 using Auth.Infrastructure.Services.Notifications;
 using Auth.Infrastructure.auth.Services;
+
+// ASP.NET Core
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using Microsoft.AspNetCore.HttpOverrides;
+
+// 3rd
 using QuestPDF.Infrastructure;
-using Microsoft.AspNetCore.HttpOverrides; // ForwardedHeaders
 
 QuestPDF.Settings.License = LicenseType.Community;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// ======================================================
-//  Configuración (appsettings + variables de entorno)
-//  - Mantiene hot-reload en dev
-//  - Permite override con env vars en Railway
-// ======================================================
+// ===== Config =====
 builder.Configuration
     .AddJsonFile("appsettings.json", optional: true, reloadOnChange: true)
     .AddJsonFile($"appsettings.{builder.Environment.EnvironmentName}.json", optional: true, reloadOnChange: true)
     .AddEnvironmentVariables();
 
-// ======================================================
-//  Base de datos (MySQL con Pomelo)
-// ======================================================
+// ===== DB =====
 builder.Services.AddDbContext<AppDbContext>(opts =>
 {
     var cs = builder.Configuration.GetConnectionString("Default")!;
     opts.UseMySql(cs, ServerVersion.AutoDetect(cs));
 });
 
-// ======================================================
-//  JWT (validación estricta y sin ClockSkew)
-// ======================================================
+// ===== JWT =====
 builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection("Jwt"));
-
 var key = Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"]!);
 
 builder.Services.AddAuthentication(o =>
@@ -50,7 +48,6 @@ builder.Services.AddAuthentication(o =>
 })
 .AddJwtBearer(o =>
 {
-    // En Railway el TLS lo termina el proxy; evitar "https requerido" aquí
     o.RequireHttpsMetadata = false;
     o.SaveToken = true;
     o.TokenValidationParameters = new TokenValidationParameters
@@ -67,9 +64,7 @@ builder.Services.AddAuthentication(o =>
 
 builder.Services.AddAuthorization();
 
-// ======================================================
-//  CORS (Vercel + localhost), mismo orden y reglas
-// ======================================================
+// ===== CORS =====
 builder.Services.AddCors(opt =>
 {
     opt.AddPolicy("dev", p => p
@@ -78,7 +73,6 @@ builder.Services.AddCors(opt =>
             try
             {
                 var host = new Uri(origin).Host;
-                // Producción Vercel + previews y localhost
                 if (host.Equals("front-end-automatas.vercel.app", StringComparison.OrdinalIgnoreCase)) return true;
                 if (host.EndsWith(".vercel.app", StringComparison.OrdinalIgnoreCase)) return true;
                 if (host.Equals("localhost", StringComparison.OrdinalIgnoreCase)) return true;
@@ -89,26 +83,27 @@ builder.Services.AddCors(opt =>
         })
         .AllowAnyHeader()
         .AllowAnyMethod()
-        // .AllowCredentials() // Mantener deshabilitado si usas JWT en header
     );
 });
 
-// ======================================================
-//  DI básico del dominio
-// ======================================================
+// ===== DI base =====
 builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
+
 builder.Services.Configure<EmailOptions>(builder.Configuration.GetSection("Email"));
 builder.Services.Configure<FacialOptions>(builder.Configuration.GetSection("FaceLogin"));
 
-// ======================================================
-//  Proveedor de correo: SendGrid si hay API key; si no, SMTP
-//  - Permite que en producción funcione aunque falte la key
-//  - En Railway, define SENDGRID_API_KEY para usar SendGrid
-// ======================================================
-var sendGridApiKey =
-    builder.Configuration["SendGrid:ApiKey"]
-    ?? Environment.GetEnvironmentVariable("SENDGRID_API_KEY");
+// ===== Envío de correo: Selección de provider + HttpClient SendGrid con timeout =====
+var sendGridApiKey = builder.Configuration["SendGrid:ApiKey"]
+                     ?? Environment.GetEnvironmentVariable("SENDGRID_API_KEY");
+
+// HttpClient dedicado para SendGrid con timeout explícito
+builder.Services.AddHttpClient("sendgrid", c =>
+{
+    c.Timeout = TimeSpan.FromSeconds(12); // evita cuelgues largos
+    c.DefaultRequestHeaders.Accept.Clear();
+    c.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+});
 
 if (!string.IsNullOrWhiteSpace(sendGridApiKey))
 {
@@ -117,18 +112,21 @@ if (!string.IsNullOrWhiteSpace(sendGridApiKey))
 }
 else
 {
-    Console.WriteLine("[MAIL] Provider = SMTP (usando sección Email).");
+    Console.WriteLine("[MAIL] Provider = SMTP (sección Email).");
     builder.Services.AddScoped<INotificationService, SmtpEmailNotificationService>();
 }
+
+// ===== Cola de emails + dispatcher background =====
+// Job que representa un correo con adjunto
+builder.Services.AddSingleton<IEmailJobQueue, InMemoryEmailJobQueue>();
+builder.Services.AddHostedService<EmailDispatcherBackgroundService>();
 
 builder.Services.AddScoped<IFacialAuthService, FacialAuthService>();
 builder.Services.AddScoped<IQrService, QrService>();
 builder.Services.AddScoped<IQrCardGenerator, QrCardGenerator>();
 builder.Services.AddControllers();
 
-// ======================================================
-//  Swagger + esquema de seguridad (Bearer)
-// ======================================================
+// ===== Swagger =====
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
@@ -147,9 +145,7 @@ builder.Services.AddSwaggerGen(c =>
     c.AddSecurityRequirement(new OpenApiSecurityRequirement { { jwtScheme, Array.Empty<string>() } });
 });
 
-// ======================================================
-//  HttpClient para biometría externa (timeouts y base URL)
-// ======================================================
+// ===== HttpClient biometría =====
 builder.Services.AddHttpClient<BiometricApiClient>((sp, c) =>
 {
     var cfg = sp.GetRequiredService<IConfiguration>();
@@ -164,26 +160,15 @@ builder.Services.AddHttpClient<BiometricApiClient>((sp, c) =>
 
 var app = builder.Build();
 
-// ======================================================
-//  Forwarded Headers (Railway / proxies)
-//  - Elimina warnings "Unknown proxy"
-//  - Respeta X-Forwarded-Proto / X-Forwarded-For
-//  - Opcional: en Railway añade var ASPNETCORE_FORWARDEDHEADERS_ENABLED=true
-// ======================================================
-var fwd = new ForwardedHeadersOptions
+// ===== Encabezados reenviados (Railway/Proxy) =====
+app.UseForwardedHeaders(new ForwardedHeadersOptions
 {
     ForwardedHeaders = ForwardedHeaders.XForwardedProto | ForwardedHeaders.XForwardedFor,
-    RequireHeaderSymmetry = false,
-    ForwardLimit = null
-};
-fwd.KnownNetworks.Clear();
-fwd.KnownProxies.Clear();
-app.UseForwardedHeaders(fwd);
+    // En Railway no conocemos IPs de proxy fijo; no romper si “Unknown proxy”
+    // AllowedHosts/Proxies se pueden ajustar si fuese necesario.
+});
 
-// ======================================================
-//  Manejador global de excepciones con CORS defensivo
-//  (conserva CORS aún en 500, útil para front en Vercel)
-// ======================================================
+// ===== Manejador global de excepciones con CORS =====
 app.UseExceptionHandler(errorApp =>
 {
     errorApp.Run(async ctx =>
@@ -195,7 +180,6 @@ app.UseExceptionHandler(errorApp =>
             ctx.Response.Headers["Vary"] = "Origin";
             ctx.Response.Headers["Access-Control-Allow-Methods"] = "GET,POST,PUT,PATCH,DELETE,OPTIONS";
             ctx.Response.Headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization";
-            // ctx.Response.Headers["Access-Control-Allow-Credentials"] = "true";
         }
         ctx.Response.StatusCode = StatusCodes.Status500InternalServerError;
         await ctx.Response.WriteAsync("Internal Server Error");
@@ -205,18 +189,12 @@ app.UseExceptionHandler(errorApp =>
 app.UseSwagger();
 app.UseSwaggerUI();
 
-// ======================================================
-//  Orden de middlewares (CORS debe ir antes de auth)
-// ======================================================
+// ===== ORDEN =====
 app.UseRouting();
-
-// CORS temprano para no perder headers en redirecciones/proxy
 app.UseCors("dev");
-
-// En Railway el TLS lo termina el proxy → dejar activado pero DESPUÉS de CORS
 app.UseHttpsRedirection();
 
-// Capa defensiva: responder preflight y mantener CORS en todas las respuestas
+// (Capa defensiva CORS/preflight)
 app.Use(async (ctx, next) =>
 {
     var origin = ctx.Request.Headers.Origin.ToString();
@@ -229,7 +207,6 @@ app.Use(async (ctx, next) =>
             ? "Content-Type, Authorization"
             : reqHeaders;
         ctx.Response.Headers["Access-Control-Allow-Methods"] = "GET,POST,PUT,PATCH,DELETE,OPTIONS";
-        // ctx.Response.Headers["Access-Control-Allow-Credentials"] = "true";
     }
 
     if (HttpMethods.IsOptions(ctx.Request.Method))
@@ -243,10 +220,7 @@ app.Use(async (ctx, next) =>
 
 app.UseAuthentication();
 
-// ======================================================
-//  Revocación del JWT basada en tabla Sesiones (hash del token)
-//  - Se mantiene exactamente igual a tu flujo actual
-// ======================================================
+// Revocación
 app.Use(async (ctx, next) =>
 {
     var auth = ctx.Request.Headers.Authorization.ToString();
@@ -273,17 +247,11 @@ app.Use(async (ctx, next) =>
 });
 
 app.UseAuthorization();
-
-// ======================================================
-//  Endpoints
-// ======================================================
 app.MapControllers().RequireCors("dev");
 
-// Respuesta global a OPTIONS (preflight) para cualquier ruta
 app.MapMethods("{*path}", new[] { "OPTIONS" }, () => Results.NoContent())
    .RequireCors("dev");
 
-// Endpoint de salud de DB
 app.MapGet("/health/db", async (AppDbContext db) =>
 {
     try
@@ -298,3 +266,113 @@ app.MapGet("/health/db", async (AppDbContext db) =>
 });
 
 app.Run();
+
+
+// =========================
+//  Infra de correo en background (misma unidad de compilación)
+//  - Cola en memoria (Channel)
+//  - HostedService con reintentos y backoff
+// =========================
+
+public record EmailJob(
+    string To,
+    string Subject,
+    string HtmlBody,
+    string? AttachmentName,
+    byte[]? AttachmentBytes,
+    string? AttachmentContentType
+);
+
+public interface IEmailJobQueue
+{
+    ValueTask EnqueueAsync(EmailJob job, CancellationToken ct = default);
+    IAsyncEnumerable<EmailJob> DequeueAsync(CancellationToken ct);
+}
+
+public class InMemoryEmailJobQueue : IEmailJobQueue
+{
+    // Bounded para no crecer infinito. 256 trabajos simultáneos es más que suficiente.
+    private readonly Channel<EmailJob> _channel = Channel.CreateBounded<EmailJob>(
+        new BoundedChannelOptions(256)
+        {
+            FullMode = BoundedChannelFullMode.Wait,
+            SingleReader = true,
+            SingleWriter = false
+        });
+
+    public ValueTask EnqueueAsync(EmailJob job, CancellationToken ct = default)
+        => _channel.Writer.WriteAsync(job, ct);
+
+    public async IAsyncEnumerable<EmailJob> DequeueAsync([System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
+    {
+        while (await _channel.Reader.WaitToReadAsync(ct))
+        {
+            while (_channel.Reader.TryRead(out var job))
+                yield return job;
+        }
+    }
+}
+
+public class EmailDispatcherBackgroundService : BackgroundService
+{
+    private readonly IServiceScopeFactory _scopeFactory;
+    private readonly IEmailJobQueue _queue;
+    private readonly ILogger<EmailDispatcherBackgroundService> _logger;
+
+    public EmailDispatcherBackgroundService(
+        IServiceScopeFactory scopeFactory,
+        IEmailJobQueue queue,
+        ILogger<EmailDispatcherBackgroundService> logger)
+    {
+        _scopeFactory = scopeFactory;
+        _queue = queue;
+        _logger = logger;
+    }
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        _logger.LogInformation("[MAIL-DISPATCH] Iniciado.");
+        await foreach (var job in _queue.DequeueAsync(stoppingToken))
+        {
+            // Reintentos: 3 intentos, con backoff 1s -> 3s -> 7s
+            var delays = new[] { 1000, 3000, 7000 };
+            var attempt = 0;
+            for (;;)
+            {
+                try
+                {
+                    using var scope = _scopeFactory.CreateScope();
+                    var sender = scope.ServiceProvider.GetRequiredService<INotificationService>();
+
+                    // Límite duro por envío (evita bloqueos largos)
+                    using var cts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+                    cts.CancelAfter(TimeSpan.FromSeconds(15));
+
+                    await sender.SendEmailAsync(
+                        job.To,
+                        job.Subject,
+                        job.HtmlBody,
+                        job.AttachmentName,
+                        job.AttachmentBytes,
+                        job.AttachmentContentType
+                    );
+
+                    _logger.LogInformation("[MAIL-DISPATCH] OK -> {To}", job.To);
+                    break; // éxito
+                }
+                catch (Exception ex)
+                {
+                    if (attempt >= delays.Length - 1)
+                    {
+                        _logger.LogError(ex, "[MAIL-DISPATCH] FALLÓ DEFINITIVO -> {To}", job.To);
+                        break;
+                    }
+                    var delay = delays[attempt++];
+                    _logger.LogWarning(ex, "[MAIL-DISPATCH] Reintentando en {Delay} ms -> {To}", delay, job.To);
+                    try { await Task.Delay(delay, stoppingToken); } catch { /* ignore */ }
+                }
+            }
+        }
+        _logger.LogInformation("[MAIL-DISPATCH] Finalizado.");
+    }
+}

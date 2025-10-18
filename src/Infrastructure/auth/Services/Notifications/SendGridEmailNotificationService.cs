@@ -1,4 +1,6 @@
 using System;
+using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
@@ -7,14 +9,15 @@ using SendGrid.Helpers.Mail;
 
 namespace Auth.Infrastructure.Services.Notifications
 {
-    // Implementa ambas firmas de INotificationService
+    // Implementa ambas firmas de INotificationService (sin romper nombres ni firmas)
     public class SendGridEmailNotificationService : INotificationService
     {
         private readonly IConfiguration _cfg;
         public SendGridEmailNotificationService(IConfiguration cfg) => _cfg = cfg;
 
         // ===========================================
-        // 1) NUEVA FIRMA (parámetros separados)
+        // 1) FIRMA USADA EN TU PROYECTO (parámetros separados)
+        //    -> ahora con HttpClient local y timeout explícito
         // ===========================================
         public async Task SendEmailAsync(
             string toEmail,
@@ -34,7 +37,7 @@ namespace Auth.Infrastructure.Services.Notifications
             if (string.IsNullOrWhiteSpace(apiKey))
                 throw new InvalidOperationException("No hay API Key de SendGrid. Configure SendGrid:ApiKey o variable SENDGRID_API_KEY.");
 
-            // From: prioriza Email:From (si lo usas), sino SendGrid:From
+            // From: prioriza Email:From; si no, SendGrid:From
             var fromRaw = _cfg["Email:From"];
             if (string.IsNullOrWhiteSpace(fromRaw))
                 fromRaw = _cfg["SendGrid:From"];
@@ -52,30 +55,38 @@ namespace Auth.Infrastructure.Services.Notifications
             };
             msg.AddTo(new EmailAddress(toAddr, toName));
 
-            // Adjuntar si procede
+            // Adjuntar si procede (default genérico application/pdf u octet-stream si no envías contentType)
             if (!string.IsNullOrWhiteSpace(attachmentName) && attachmentBytes is { Length: > 0 })
             {
                 var base64 = Convert.ToBase64String(attachmentBytes);
                 msg.AddAttachment(
                     attachmentName,
                     base64,
-                    string.IsNullOrWhiteSpace(attachmentContentType) ? "application/octet-stream" : attachmentContentType
+                    string.IsNullOrWhiteSpace(attachmentContentType) ? "application/pdf" : attachmentContentType
                 );
             }
 
-            var client = new SendGridClient(apiKey);
+            // HttpClient con timeout explícito para evitar cuelgues
+            using var http = new HttpClient
+            {
+                Timeout = TimeSpan.FromSeconds(12)
+            };
+            http.DefaultRequestHeaders.Accept.Clear();
+            http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+
+            // SendGridClient con HttpClient inyectado (mejor control del timeout)
+            var client = new SendGridClient(http, apiKey);
             var response = await client.SendEmailAsync(msg);
 
             if ((int)response.StatusCode >= 400)
             {
                 var body = await response.Body.ReadAsStringAsync();
-                throw new InvalidOperationException($"Fallo al enviar email con SendGrid. Status={(int)response.StatusCode}. Body={body}");
+                throw new InvalidOperationException($"SendGrid error {(int)response.StatusCode}: {body}");
             }
         }
 
         // ===========================================
         // 2) FIRMA ANTIGUA (tupla) — compatibilidad
-        //    Redirige a la NUEVA firma
         // ===========================================
         public async Task SendEmailAsync(
             string toEmail,

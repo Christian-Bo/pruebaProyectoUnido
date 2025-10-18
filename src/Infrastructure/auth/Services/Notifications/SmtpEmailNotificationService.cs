@@ -2,6 +2,7 @@ using MailKit.Net.Smtp;
 using MailKit.Security;
 using MimeKit;
 using Microsoft.Extensions.Configuration;
+using System.Threading;
 
 namespace Auth.Infrastructure.Services.Notifications;
 
@@ -11,7 +12,8 @@ public class SmtpEmailNotificationService : INotificationService
     public SmtpEmailNotificationService(IConfiguration cfg) => _cfg = cfg;
 
     // =======================
-    // 1) Sobrecarga NUEVA: parámetros separados (lo que usa tu AuthService)
+    // 1) Sobrecarga usada (parámetros separados)
+    //    -> ahora con Timeout y CancellationToken
     // =======================
     public async Task SendEmailAsync(
         string toEmail,
@@ -21,17 +23,17 @@ public class SmtpEmailNotificationService : INotificationService
         byte[]? attachmentBytes = null,
         string? attachmentContentType = null)
     {
-        // Lee desde la sección Email (coincide con tu appsettings.json)
+        // Config SMTP desde Email:* (mantengo los mismos nombres de claves)
         var sec = _cfg.GetSection("Email");
         var host = sec["Host"];
         var portStr = sec["Port"];
         var user = sec["User"];
-        var pass = sec["Password"]; // <-- tu clave se llama Password
-        var from = sec["From"];     // Puede ser "Nombre <correo@dominio>"
+        var pass = sec["Password"];
+        var from = sec["From"];
         var useStartTls = false;
         bool.TryParse(sec["UseStartTls"], out useStartTls);
 
-        // Validaciones para evitar nulls
+        // Validaciones mínimas
         if (string.IsNullOrWhiteSpace(host)) throw new InvalidOperationException("Email.Host no configurado.");
         if (!int.TryParse(portStr, out var port) || port <= 0) throw new InvalidOperationException("Email.Port inválido.");
         if (string.IsNullOrWhiteSpace(user)) throw new InvalidOperationException("Email.User no configurado.");
@@ -39,39 +41,43 @@ public class SmtpEmailNotificationService : INotificationService
         if (string.IsNullOrWhiteSpace(from)) throw new InvalidOperationException("Email.From no configurado.");
         if (string.IsNullOrWhiteSpace(toEmail)) throw new ArgumentException("El email de destino está vacío.", nameof(toEmail));
 
+        // Construcción del mensaje
         var msg = new MimeMessage();
-
-        // From en formato "Nombre <correo@dominio>" o solo "correo@dominio"
         msg.From.Add(MailboxAddress.Parse(from));
         msg.To.Add(MailboxAddress.Parse(toEmail));
         msg.Subject = subject ?? string.Empty;
 
         var builder = new BodyBuilder { HtmlBody = htmlBody ?? string.Empty };
-
         if (!string.IsNullOrWhiteSpace(attachmentName) && attachmentBytes is not null && attachmentBytes.Length > 0)
         {
-            var ct = string.IsNullOrWhiteSpace(attachmentContentType) ? "application/octet-stream" : attachmentContentType!;
+            var ct = string.IsNullOrWhiteSpace(attachmentContentType) ? "application/pdf" : attachmentContentType!;
             builder.Attachments.Add(attachmentName, attachmentBytes, ContentType.Parse(ct));
         }
-
         msg.Body = builder.ToMessageBody();
 
-        using var smtp = new SmtpClient();
+        using var smtp = new SmtpClient
+        {
+            // Timeout duro en milisegundos (evita cuelgues largos)
+            Timeout = 10000
+        };
 
-        // Seleccionar seguridad según config/puerto
-        // 465 => SSL directo; 587 => StartTLS
+        // Seguridad: 465 => SSL, 587 => StartTLS, o Auto
         SecureSocketOptions security =
             useStartTls ? SecureSocketOptions.StartTls :
             (port == 465 ? SecureSocketOptions.SslOnConnect : SecureSocketOptions.Auto);
 
-        await smtp.ConnectAsync(host, port, security);
-        await smtp.AuthenticateAsync(user, pass);
-        await smtp.SendAsync(msg);
-        await smtp.DisconnectAsync(true);
+        // Cancelación de toda la operación si excede 12s
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(12));
+        var ct = cts.Token;
+
+        await smtp.ConnectAsync(host, port, security, ct);
+        await smtp.AuthenticateAsync(user, pass, ct);
+        await smtp.SendAsync(msg, ct);
+        await smtp.DisconnectAsync(true, ct);
     }
 
     // ============================
-    // 2) Sobrecarga VIEJA: tupla — reenvía a la nueva para mantener compatibilidad
+    // 2) Sobrecarga compatible (tupla)
     // ============================
     public async Task SendEmailAsync(
         string toEmail,

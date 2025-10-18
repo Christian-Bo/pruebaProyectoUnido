@@ -9,11 +9,11 @@ using System.Data.Common;
 using System.Linq;
 using System;
 
-// ===== Fallback SHA-256
+// Fallback SHA-256
 using System.Security.Cryptography;
 using System.Text;
 
-// ===== NUEVO: para crear scope independiente en el fire-and-forget
+// Para scope independiente en fire-and-forget
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Auth.Infrastructure.Services;
@@ -26,7 +26,7 @@ public class AuthService : IAuthService
     private readonly IQrCardGenerator _card;
     private readonly INotificationService _notify;
 
-    // NUEVO: scope factory para ejecutar tareas background con servicios válidos
+    // Scope factory para ejecutar tareas background con servicios válidos
     private readonly IServiceScopeFactory _scopeFactory;
 
     public AuthService(
@@ -35,7 +35,7 @@ public class AuthService : IAuthService
         IQrService qr,
         IQrCardGenerator card,
         INotificationService notify,
-        IServiceScopeFactory scopeFactory // <— inyectado por DI
+        IServiceScopeFactory scopeFactory
     )
     {
         _db = db;
@@ -110,7 +110,7 @@ public class AuthService : IAuthService
     // ================== Registro ==================
     public async Task<AuthResponse> RegisterAsync(RegisterRequest dto)
     {
-        // Este AnyAsync será muy rápido si existen índices únicos en usuario/email (ver AppDbContext)
+        // Rápido si tienes índices únicos en usuario/email (los definiste en Modelo)
         if (await _db.Usuarios.AnyAsync(u => u.UsuarioNombre == dto.Usuario || u.Email == dto.Email))
             throw new InvalidOperationException("Usuario o email ya existen.");
 
@@ -142,8 +142,7 @@ public class AuthService : IAuthService
         await tx.CommitAsync();
         Console.WriteLine($"[REGISTER] Usuario {user.Id} creado y sesión generada.");
 
-        // ⚡️ PERFORMANCE: NO bloquear el request esperando enviar el PDF
-        //    Disparamos la tarea en background en un scope nuevo, para tener DbContext/servicios válidos.
+        // ⚡ Disparo en background (fire-and-forget) para que el request no espere al proveedor de correo
         _ = Task.Run(async () =>
         {
             try
@@ -247,6 +246,7 @@ public class AuthService : IAuthService
     }
 
     // ======= Enviar carnet AHORA (PDF + QR) =======
+    // Mantengo la firma y los nombres usados en otros archivos.
     public async Task SendCardNowAsync(int usuarioId)
     {
         Console.WriteLine($"[MAIL] SendCardNowAsync IN usuario={usuarioId}");
@@ -296,6 +296,7 @@ public class AuthService : IAuthService
         }
         catch (Exception ex)
         {
+            // Importante: nunca tirar 500 hacia arriba por envío
             Console.WriteLine($"[MAIL] ERROR enviando email usuario={usuarioId}: {ex.Message}");
         }
     }
