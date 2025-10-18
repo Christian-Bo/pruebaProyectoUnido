@@ -13,7 +13,7 @@ using System;
 using System.Security.Cryptography;
 using System.Text;
 
-// Para scope independiente en fire-and-forget
+// Scope en background
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Auth.Infrastructure.Services;
@@ -25,8 +25,6 @@ public class AuthService : IAuthService
     private readonly IQrService _qr;
     private readonly IQrCardGenerator _card;
     private readonly INotificationService _notify;
-
-    // Scope factory para ejecutar tareas background con servicios válidos
     private readonly IServiceScopeFactory _scopeFactory;
 
     public AuthService(
@@ -49,7 +47,6 @@ public class AuthService : IAuthService
     private async Task<string> DbHashAsync(string plain)
     {
         var input = plain ?? string.Empty;
-
         var conn = _db.Database.GetDbConnection();
         var shouldClose = false;
 
@@ -58,7 +55,6 @@ public class AuthService : IAuthService
             await conn.OpenAsync();
             shouldClose = true;
         }
-
         try
         {
             try
@@ -92,10 +88,7 @@ public class AuthService : IAuthService
 
             return ComputeSha256Hex(input);
         }
-        finally
-        {
-            if (shouldClose) await conn.CloseAsync();
-        }
+        finally { if (shouldClose) await conn.CloseAsync(); }
     }
 
     private static string ComputeSha256Hex(string input)
@@ -107,10 +100,9 @@ public class AuthService : IAuthService
         return sb.ToString();
     }
 
-    // ================== Registro ==================
+    // ================== Registro (no bloquea por correo) ==================
     public async Task<AuthResponse> RegisterAsync(RegisterRequest dto)
     {
-        // Rápido si tienes índices únicos en usuario/email (los definiste en Modelo)
         if (await _db.Usuarios.AnyAsync(u => u.UsuarioNombre == dto.Usuario || u.Email == dto.Email))
             throw new InvalidOperationException("Usuario o email ya existen.");
 
@@ -138,11 +130,10 @@ public class AuthService : IAuthService
         }
 
         var resp = await LoginInternalAsync(user, MetodoLogin.password);
-
         await tx.CommitAsync();
         Console.WriteLine($"[REGISTER] Usuario {user.Id} creado y sesión generada.");
 
-        // ⚡ Disparo en background (fire-and-forget) para que el request no espere al proveedor de correo
+        // Envío del carnet en background (no bloquea)
         _ = Task.Run(async () =>
         {
             try
@@ -161,18 +152,15 @@ public class AuthService : IAuthService
         return resp;
     }
 
-    // ================== Login ==================
     public async Task<AuthResponse> LoginAsync(LoginRequest dto)
     {
         var user = await _db.Usuarios
-            .FirstOrDefaultAsync(u =>
-                (u.UsuarioNombre == dto.UsuarioOrEmail || u.Email == dto.UsuarioOrEmail));
+            .FirstOrDefaultAsync(u => (u.UsuarioNombre == dto.UsuarioOrEmail || u.Email == dto.UsuarioOrEmail));
 
         if (user is null || !user.Activo)
             throw new UnauthorizedAccessException("Credenciales inválidas.");
 
         var incoming = await DbHashAsync(dto.Password);
-
         if (!string.Equals(incoming, user.PasswordHash, StringComparison.OrdinalIgnoreCase))
             throw new UnauthorizedAccessException("Credenciales inválidas.");
 
@@ -245,8 +233,7 @@ public class AuthService : IAuthService
         };
     }
 
-    // ======= Enviar carnet AHORA (PDF + QR) =======
-    // Mantengo la firma y los nombres usados en otros archivos.
+    // ======= Enviar carnet AHORA (PDF + QR) — optimizado =======
     public async Task SendCardNowAsync(int usuarioId)
     {
         Console.WriteLine($"[MAIL] SendCardNowAsync IN usuario={usuarioId}");
@@ -258,6 +245,7 @@ public class AuthService : IAuthService
             return;
         }
 
+        // 1) QR: obtenlo una sola vez. Si no existe, créalo.
         var qr = await _qr.GetOrCreateUserQrAsync(user.Id);
         if (qr is null || string.IsNullOrWhiteSpace(qr.Codigo))
         {
@@ -265,9 +253,11 @@ public class AuthService : IAuthService
             return;
         }
 
+        // 2) Foto (si existe) — UNA sola consulta
         var fotoBytes = await TryGetUserPhotoBytesAsync(usuarioId);
         Console.WriteLine($"[MAIL] Foto bytes={(fotoBytes?.Length ?? 0)} usuario={usuarioId}");
 
+        // 3) Generar PDF (rápido; si la foto existe la incrusta, si no, PDF sin foto)
         var pdf = _card.GenerateRegistrationPdf(
             fullName: user.NombreCompleto,
             userName: user.UsuarioNombre,
@@ -276,11 +266,12 @@ public class AuthService : IAuthService
             fotoBytes: fotoBytes
         );
 
-        var bodyHtml = $@"
-            <p>Hola <b>{user.NombreCompleto}</b>,</p>
-            <p>Adjuntamos tu <b>carnet de acceso con código QR</b>{(fotoBytes != null ? " con tu fotografía" : "")}.</p>
-            <p>Si no solicitaste este registro, contacta a soporte.</p>";
+        var bodyHtml =
+            $"<p>Hola <b>{user.NombreCompleto}</b>,</p>" +
+            $"<p>Adjuntamos tu <b>carnet de acceso con código QR</b>{(fotoBytes != null ? " con tu fotografía" : "")}.</p>" +
+            $"<p>Si no solicitaste este registro, contacta a soporte.</p>";
 
+        // 4) Enviar — el propio proveedor (SendGrid/SMTP) tiene timeout corto y reintentos
         try
         {
             await _notify.SendEmailAsync(
@@ -296,7 +287,7 @@ public class AuthService : IAuthService
         }
         catch (Exception ex)
         {
-            // Importante: nunca tirar 500 hacia arriba por envío
+            // No romper flujo—solo loguear
             Console.WriteLine($"[MAIL] ERROR enviando email usuario={usuarioId}: {ex.Message}");
         }
     }
@@ -306,6 +297,7 @@ public class AuthService : IAuthService
     {
         try
         {
+            // primero la ACTIVA más reciente
             var row = await _db.AutenticacionFacial
                 .Where(a => a.UsuarioId == usuarioId && a.Activo)
                 .OrderByDescending(a => a.FechaCreacion)

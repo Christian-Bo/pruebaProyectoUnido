@@ -1,6 +1,4 @@
 using System;
-using System.Net.Http;
-using System.Net.Http.Headers;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
@@ -9,15 +7,22 @@ using SendGrid.Helpers.Mail;
 
 namespace Auth.Infrastructure.Services.Notifications
 {
-    // Implementa ambas firmas de INotificationService (sin romper nombres ni firmas)
+    /// <summary>
+    /// Envío de correos con SendGrid usando sólo IConfiguration.
+    /// No depende de IHttpClientFactory para evitar referencias extra en la capa Infrastructure.
+    /// Implementa ambas firmas de INotificationService para compatibilidad.
+    /// </summary>
     public class SendGridEmailNotificationService : INotificationService
     {
         private readonly IConfiguration _cfg;
-        public SendGridEmailNotificationService(IConfiguration cfg) => _cfg = cfg;
+
+        public SendGridEmailNotificationService(IConfiguration cfg)
+        {
+            _cfg = cfg;
+        }
 
         // ===========================================
-        // 1) FIRMA USADA EN TU PROYECTO (parámetros separados)
-        //    -> ahora con HttpClient local y timeout explícito
+        // 1) FIRMA "NUEVA" (parámetros separados)
         // ===========================================
         public async Task SendEmailAsync(
             string toEmail,
@@ -30,14 +35,14 @@ namespace Auth.Infrastructure.Services.Notifications
             if (string.IsNullOrWhiteSpace(toEmail))
                 throw new ArgumentException("El email de destino está vacío.", nameof(toEmail));
 
-            // API Key: config o variable de entorno (Railway)
+            // API Key: sección de config o variable de entorno (Railway)
             var apiKey = _cfg["SendGrid:ApiKey"];
             if (string.IsNullOrWhiteSpace(apiKey))
                 apiKey = Environment.GetEnvironmentVariable("SENDGRID_API_KEY");
             if (string.IsNullOrWhiteSpace(apiKey))
                 throw new InvalidOperationException("No hay API Key de SendGrid. Configure SendGrid:ApiKey o variable SENDGRID_API_KEY.");
 
-            // From: prioriza Email:From; si no, SendGrid:From
+            // From: prioriza Email:From, si no SendGrid:From
             var fromRaw = _cfg["Email:From"];
             if (string.IsNullOrWhiteSpace(fromRaw))
                 fromRaw = _cfg["SendGrid:From"];
@@ -55,38 +60,36 @@ namespace Auth.Infrastructure.Services.Notifications
             };
             msg.AddTo(new EmailAddress(toAddr, toName));
 
-            // Adjuntar si procede (default genérico application/pdf u octet-stream si no envías contentType)
+            // Adjuntos opcionales
             if (!string.IsNullOrWhiteSpace(attachmentName) && attachmentBytes is { Length: > 0 })
             {
                 var base64 = Convert.ToBase64String(attachmentBytes);
-                msg.AddAttachment(
-                    attachmentName,
-                    base64,
-                    string.IsNullOrWhiteSpace(attachmentContentType) ? "application/pdf" : attachmentContentType
-                );
+                var ct = string.IsNullOrWhiteSpace(attachmentContentType)
+                    ? "application/octet-stream"
+                    : attachmentContentType!;
+                msg.AddAttachment(attachmentName, base64, ct);
             }
 
-            // HttpClient con timeout explícito para evitar cuelgues
-            using var http = new HttpClient
-            {
-                Timeout = TimeSpan.FromSeconds(12)
-            };
-            http.DefaultRequestHeaders.Accept.Clear();
-            http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+            // Cliente directo (sin IHttpClientFactory)
+            var client = new SendGridClient(apiKey);
 
-            // SendGridClient con HttpClient inyectado (mejor control del timeout)
-            var client = new SendGridClient(http, apiKey);
+            // IMPORTANTE: el SDK ya gestiona HttpClient internamente.
+            // Si necesitas timeouts más agresivos, considera SMTP como fallback
+            // o un proxy con timeouts; SendGridClient no expone Timeout directo.
+
             var response = await client.SendEmailAsync(msg);
 
             if ((int)response.StatusCode >= 400)
             {
                 var body = await response.Body.ReadAsStringAsync();
-                throw new InvalidOperationException($"SendGrid error {(int)response.StatusCode}: {body}");
+                throw new InvalidOperationException(
+                    $"Fallo al enviar email con SendGrid. Status={(int)response.StatusCode}. Body={body}");
             }
         }
 
         // ===========================================
-        // 2) FIRMA ANTIGUA (tupla) — compatibilidad
+        // 2) FIRMA "ANTIGUA" (tupla) — compatibilidad
+        //    Redirige a la NUEVA firma
         // ===========================================
         public async Task SendEmailAsync(
             string toEmail,
@@ -124,6 +127,7 @@ namespace Auth.Infrastructure.Services.Notifications
         private static (string Email, string Name) ParseAddress(string raw)
         {
             if (string.IsNullOrWhiteSpace(raw)) return (raw, string.Empty);
+            // Formato: "Nombre Apellido <correo@dominio>"
             var m = Regex.Match(raw, @"^(.*)<([^>]+)>$");
             if (m.Success)
             {
@@ -131,6 +135,7 @@ namespace Auth.Infrastructure.Services.Notifications
                 var email = m.Groups[2].Value.Trim();
                 return (email, name);
             }
+            // Sólo correo
             return (raw.Trim(), string.Empty);
         }
     }

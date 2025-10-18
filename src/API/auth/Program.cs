@@ -20,6 +20,11 @@ using Microsoft.AspNetCore.HttpOverrides;
 // 3rd
 using QuestPDF.Infrastructure;
 
+// Hosting / Logging
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.DependencyInjection;
+
 QuestPDF.Settings.License = LicenseType.Community;
 
 var builder = WebApplication.CreateBuilder(args);
