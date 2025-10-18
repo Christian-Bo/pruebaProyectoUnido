@@ -11,26 +11,34 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using QuestPDF.Infrastructure;
-using Microsoft.AspNetCore.HttpOverrides; // <-- agregado para ForwardedHeaders
+using Microsoft.AspNetCore.HttpOverrides; // ForwardedHeaders
 
 QuestPDF.Settings.License = LicenseType.Community;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// ===== Config =====
+// ======================================================
+//  Configuración (appsettings + variables de entorno)
+//  - Mantiene hot-reload en dev
+//  - Permite override con env vars en Railway
+// ======================================================
 builder.Configuration
     .AddJsonFile("appsettings.json", optional: true, reloadOnChange: true)
     .AddJsonFile($"appsettings.{builder.Environment.EnvironmentName}.json", optional: true, reloadOnChange: true)
     .AddEnvironmentVariables();
 
-// ===== DB =====
+// ======================================================
+//  Base de datos (MySQL con Pomelo)
+// ======================================================
 builder.Services.AddDbContext<AppDbContext>(opts =>
 {
     var cs = builder.Configuration.GetConnectionString("Default")!;
     opts.UseMySql(cs, ServerVersion.AutoDetect(cs));
 });
 
-// ===== JWT =====
+// ======================================================
+//  JWT (validación estricta y sin ClockSkew)
+// ======================================================
 builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection("Jwt"));
 
 var key = Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"]!);
@@ -42,6 +50,7 @@ builder.Services.AddAuthentication(o =>
 })
 .AddJwtBearer(o =>
 {
+    // En Railway el TLS lo termina el proxy; evitar "https requerido" aquí
     o.RequireHttpsMetadata = false;
     o.SaveToken = true;
     o.TokenValidationParameters = new TokenValidationParameters
@@ -58,8 +67,9 @@ builder.Services.AddAuthentication(o =>
 
 builder.Services.AddAuthorization();
 
-// ===== CORS =====
-// Si prefieres listar orígenes exactos, puedes reemplazar SetIsOriginAllowed por .WithOrigins("https://front-end-automatas.vercel.app")
+// ======================================================
+//  CORS (Vercel + localhost), mismo orden y reglas
+// ======================================================
 builder.Services.AddCors(opt =>
 {
     opt.AddPolicy("dev", p => p
@@ -79,21 +89,27 @@ builder.Services.AddCors(opt =>
         })
         .AllowAnyHeader()
         .AllowAnyMethod()
-        // .AllowCredentials() // <-- SOLO si usas cookies; con JWT en header, déjalo comentado
+        // .AllowCredentials() // Mantener deshabilitado si usas JWT en header
     );
 });
 
-// ===== DI =====
+// ======================================================
+//  DI básico del dominio
+// ======================================================
 builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.Configure<EmailOptions>(builder.Configuration.GetSection("Email"));
 builder.Services.Configure<FacialOptions>(builder.Configuration.GetSection("FaceLogin"));
 
-// ======== Selección de proveedor de correo (auto) ========
-var sendGridApiKey = builder.Configuration["SendGrid:ApiKey"]
-                     ?? Environment.GetEnvironmentVariable("SENDGRID_API_KEY");
+// ======================================================
+//  Proveedor de correo: SendGrid si hay API key; si no, SMTP
+//  - Permite que en producción funcione aunque falte la key
+//  - En Railway, define SENDGRID_API_KEY para usar SendGrid
+// ======================================================
+var sendGridApiKey =
+    builder.Configuration["SendGrid:ApiKey"]
+    ?? Environment.GetEnvironmentVariable("SENDGRID_API_KEY");
 
-// Si hay API key => SendGrid; si no, usa SMTP (Gmail, ya configurado en Email:*).
 if (!string.IsNullOrWhiteSpace(sendGridApiKey))
 {
     Console.WriteLine("[MAIL] Provider = SendGrid (ApiKey detectada).");
@@ -110,12 +126,14 @@ builder.Services.AddScoped<IQrService, QrService>();
 builder.Services.AddScoped<IQrCardGenerator, QrCardGenerator>();
 builder.Services.AddControllers();
 
-// ===== Swagger =====
+// ======================================================
+//  Swagger + esquema de seguridad (Bearer)
+// ======================================================
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
     c.SwaggerDoc("v1", new OpenApiInfo { Title = "Auth.API", Version = "v1" });
-    var jwt = new OpenApiSecurityScheme
+    var jwtScheme = new OpenApiSecurityScheme
     {
         Scheme = "bearer",
         BearerFormat = "JWT",
@@ -125,11 +143,13 @@ builder.Services.AddSwaggerGen(c =>
         Description = "Introduce el token **JWT** (sin 'Bearer')",
         Reference = new OpenApiReference { Id = JwtBearerDefaults.AuthenticationScheme, Type = ReferenceType.SecurityScheme }
     };
-    c.AddSecurityDefinition(jwt.Reference.Id, jwt);
-    c.AddSecurityRequirement(new OpenApiSecurityRequirement { { jwt, Array.Empty<string>() } });
+    c.AddSecurityDefinition(jwtScheme.Reference.Id, jwtScheme);
+    c.AddSecurityRequirement(new OpenApiSecurityRequirement { { jwtScheme, Array.Empty<string>() } });
 });
 
-// ===== HttpClient biometría =====
+// ======================================================
+//  HttpClient para biometría externa (timeouts y base URL)
+// ======================================================
 builder.Services.AddHttpClient<BiometricApiClient>((sp, c) =>
 {
     var cfg = sp.GetRequiredService<IConfiguration>();
@@ -144,13 +164,26 @@ builder.Services.AddHttpClient<BiometricApiClient>((sp, c) =>
 
 var app = builder.Build();
 
-// ===== Encabezados reenviados (Railway/Proxy) =====
-app.UseForwardedHeaders(new ForwardedHeadersOptions
+// ======================================================
+//  Forwarded Headers (Railway / proxies)
+//  - Elimina warnings "Unknown proxy"
+//  - Respeta X-Forwarded-Proto / X-Forwarded-For
+//  - Opcional: en Railway añade var ASPNETCORE_FORWARDEDHEADERS_ENABLED=true
+// ======================================================
+var fwd = new ForwardedHeadersOptions
 {
-    ForwardedHeaders = ForwardedHeaders.XForwardedProto | ForwardedHeaders.XForwardedFor
-});
+    ForwardedHeaders = ForwardedHeaders.XForwardedProto | ForwardedHeaders.XForwardedFor,
+    RequireHeaderSymmetry = false,
+    ForwardLimit = null
+};
+fwd.KnownNetworks.Clear();
+fwd.KnownProxies.Clear();
+app.UseForwardedHeaders(fwd);
 
-// ===== Manejador global de excepciones con CORS (defensivo, mantiene headers en 500) =====
+// ======================================================
+//  Manejador global de excepciones con CORS defensivo
+//  (conserva CORS aún en 500, útil para front en Vercel)
+// ======================================================
 app.UseExceptionHandler(errorApp =>
 {
     errorApp.Run(async ctx =>
@@ -162,7 +195,7 @@ app.UseExceptionHandler(errorApp =>
             ctx.Response.Headers["Vary"] = "Origin";
             ctx.Response.Headers["Access-Control-Allow-Methods"] = "GET,POST,PUT,PATCH,DELETE,OPTIONS";
             ctx.Response.Headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization";
-            // ctx.Response.Headers["Access-Control-Allow-Credentials"] = "true"; // si activas credenciales
+            // ctx.Response.Headers["Access-Control-Allow-Credentials"] = "true";
         }
         ctx.Response.StatusCode = StatusCodes.Status500InternalServerError;
         await ctx.Response.WriteAsync("Internal Server Error");
@@ -172,35 +205,33 @@ app.UseExceptionHandler(errorApp =>
 app.UseSwagger();
 app.UseSwaggerUI();
 
-// ===== ORDEN =====
+// ======================================================
+//  Orden de middlewares (CORS debe ir antes de auth)
+// ======================================================
 app.UseRouting();
 
-// --- CORS: debe ejecutarse ANTES de cualquier redirección o auth ---
+// CORS temprano para no perder headers en redirecciones/proxy
 app.UseCors("dev");
 
-// (Opcional) si Railway termina TLS, evita redirecciones sin CORS.
-// Si igual quieres mantenerlo, colócalo DESPUÉS de UseCors para no perder los headers en 30x.
+// En Railway el TLS lo termina el proxy → dejar activado pero DESPUÉS de CORS
 app.UseHttpsRedirection();
 
-// (Capa ultra-defensiva: asegura encabezados y responde preflight OPTIONS)
+// Capa defensiva: responder preflight y mantener CORS en todas las respuestas
 app.Use(async (ctx, next) =>
 {
-    // Agrega Access-Control-Allow-Origin siempre (incluye errores/throw)
     var origin = ctx.Request.Headers.Origin.ToString();
     if (!string.IsNullOrEmpty(origin))
     {
-        ctx.Response.Headers["Access-Control-Allow-Origin"] = origin; // refleja el origin permitido
+        ctx.Response.Headers["Access-Control-Allow-Origin"] = origin;
         ctx.Response.Headers["Vary"] = "Origin";
         var reqHeaders = ctx.Request.Headers["Access-Control-Request-Headers"].ToString();
         ctx.Response.Headers["Access-Control-Allow-Headers"] = string.IsNullOrEmpty(reqHeaders)
             ? "Content-Type, Authorization"
             : reqHeaders;
         ctx.Response.Headers["Access-Control-Allow-Methods"] = "GET,POST,PUT,PATCH,DELETE,OPTIONS";
-        // Si habilitas credenciales en la policy, agrega también:
         // ctx.Response.Headers["Access-Control-Allow-Credentials"] = "true";
     }
 
-    // Preflight
     if (HttpMethods.IsOptions(ctx.Request.Method))
     {
         ctx.Response.StatusCode = StatusCodes.Status204NoContent;
@@ -212,7 +243,10 @@ app.Use(async (ctx, next) =>
 
 app.UseAuthentication();
 
-// --- middleware de revocación (después de CORS) ---
+// ======================================================
+//  Revocación del JWT basada en tabla Sesiones (hash del token)
+//  - Se mantiene exactamente igual a tu flujo actual
+// ======================================================
 app.Use(async (ctx, next) =>
 {
     var auth = ctx.Request.Headers.Authorization.ToString();
@@ -240,13 +274,16 @@ app.Use(async (ctx, next) =>
 
 app.UseAuthorization();
 
-// ===== Mapear controladores con CORS requerido =====
+// ======================================================
+//  Endpoints
+// ======================================================
 app.MapControllers().RequireCors("dev");
 
-// ===== Respuesta global a OPTIONS (preflight) con CORS =====
+// Respuesta global a OPTIONS (preflight) para cualquier ruta
 app.MapMethods("{*path}", new[] { "OPTIONS" }, () => Results.NoContent())
    .RequireCors("dev");
 
+// Endpoint de salud de DB
 app.MapGet("/health/db", async (AppDbContext db) =>
 {
     try
