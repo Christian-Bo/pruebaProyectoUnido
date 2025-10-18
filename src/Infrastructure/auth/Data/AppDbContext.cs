@@ -1,28 +1,24 @@
-using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore; 
 using Auth.Domain.Entities;
 
 namespace Auth.Infrastructure.Data;
 
 public class AppDbContext : DbContext
 {
-    public AppDbContext(DbContextOptions<AppDbContext> opts) : base(opts) { } //Constructor estandar
+    public AppDbContext(DbContextOptions<AppDbContext> opts) : base(opts) { }
 
-    //Conexión con cada una de las tablas de la base de datos por nombre en caso de no existir las crea
     public DbSet<Usuario> Usuarios => Set<Usuario>();
     public DbSet<AutenticacionFacial> AutenticacionFacial => Set<AutenticacionFacial>();
     public DbSet<CodigoQr> CodigosQr => Set<CodigoQr>();
     public DbSet<MetodoNotificacion> MetodosNotificacion => Set<MetodoNotificacion>();
     public DbSet<Sesion> Sesiones => Set<Sesion>();
 
-    /*Este es un modelo que sea crea para que todos los campos que se encuentran en las tablas sean reconocidos en los .cs
-    de la carpeta Domain esto sirve para que no sea tan necesario colocar el mismo nombre de las tablas en cada uno de los .cs
-    */
     protected override void OnModelCreating(ModelBuilder mb)
     {
         // Charset/collation (Pomelo)
         mb.HasCharSet("utf8mb4").UseCollation("utf8mb4_0900_ai_ci");
 
-        // usuarios
+        // ========= usuarios =========
         mb.Entity<Usuario>(e =>
         {
             e.ToTable("usuarios");
@@ -35,9 +31,14 @@ public class AppDbContext : DbContext
             e.Property(p => p.FechaCreacion).HasColumnName("fecha_creacion")
                 .HasDefaultValueSql("CURRENT_TIMESTAMP");
             e.Property(p => p.Activo).HasColumnName("activo").HasDefaultValue(true);
+
+            // ⚠️ Reforzamos índices únicos a nivel DB (además de los DataAnnotations)
+            e.HasIndex(p => p.UsuarioNombre).IsUnique().HasDatabaseName("idx_usuario");
+            e.HasIndex(p => p.Email).IsUnique().HasDatabaseName("idx_email");
+            e.HasIndex(p => p.Activo).HasDatabaseName("idx_activo");
         });
 
-        // autenticacion_facial
+        // ========= autenticacion_facial =========
         mb.Entity<AutenticacionFacial>(e =>
         {
             e.ToTable("autenticacion_facial");
@@ -55,9 +56,13 @@ public class AppDbContext : DbContext
              .WithMany(u => u.AutenticacionesFaciales)
              .HasForeignKey(p => p.UsuarioId)
              .OnDelete(DeleteBehavior.Cascade);
+
+            // Búsquedas típicas por usuario/activo/fecha
+            e.HasIndex(p => new { p.UsuarioId, p.Activo, p.FechaCreacion })
+             .HasDatabaseName("idx_autfacial_usuario_activo_fecha");
         });
 
-        // codigos_qr
+        // ========= codigos_qr =========
         mb.Entity<CodigoQr>(e =>
         {
             e.ToTable("codigos_qr");
@@ -71,9 +76,12 @@ public class AppDbContext : DbContext
              .WithMany(u => u.CodigosQr)
              .HasForeignKey(p => p.UsuarioId)
              .OnDelete(DeleteBehavior.Cascade);
+
+            e.HasIndex(p => new { p.UsuarioId, p.Activo }).HasDatabaseName("idx_qr_usuario_activo");
+            e.HasIndex(p => p.Codigo).HasDatabaseName("idx_qr_codigo");
         });
 
-        // metodos_notificacion
+        // ========= metodos_notificacion =========
         mb.Entity<MetodoNotificacion>(e =>
         {
             e.ToTable("metodos_notificacion");
@@ -84,7 +92,6 @@ public class AppDbContext : DbContext
             e.Property(p => p.FechaCreacion).HasColumnName("fecha_creacion")
                 .HasDefaultValueSql("CURRENT_TIMESTAMP");
 
-            // enum -> string (para que sea compatible con ENUM('email','whatsapp'))
             e.Property(p => p.Tipo)
              .HasConversion<string>()
              .HasColumnName("tipo_notificacion");
@@ -93,9 +100,11 @@ public class AppDbContext : DbContext
              .WithMany(u => u.MetodosNotificacion)
              .HasForeignKey(p => p.UsuarioId)
              .OnDelete(DeleteBehavior.Cascade);
+
+            e.HasIndex(p => new { p.UsuarioId, p.Activo }).HasDatabaseName("idx_notif_usuario_activo");
         });
 
-        // sesiones
+        // ========= sesiones =========
         mb.Entity<Sesion>(e =>
         {
             e.ToTable("sesiones");
@@ -111,6 +120,9 @@ public class AppDbContext : DbContext
              .WithMany(u => u.Sesiones)
              .HasForeignKey(p => p.UsuarioId)
              .OnDelete(DeleteBehavior.Cascade);
+
+            e.HasIndex(p => new { p.UsuarioId, p.Activa, p.FechaLogin }).HasDatabaseName("idx_sesion_usuario_activa_fecha");
+            e.HasIndex(p => p.SessionTokenHash).HasDatabaseName("idx_sesion_tokenhash");
         });
     }
 }

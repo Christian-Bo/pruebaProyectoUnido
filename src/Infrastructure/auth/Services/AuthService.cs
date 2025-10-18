@@ -9,9 +9,12 @@ using System.Data.Common;
 using System.Linq;
 using System;
 
-// ===== NUEVO: para fallback SHA-256
+// ===== Fallback SHA-256
 using System.Security.Cryptography;
 using System.Text;
+
+// ===== NUEVO: para crear scope independiente en el fire-and-forget
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Auth.Infrastructure.Services;
 
@@ -23,24 +26,26 @@ public class AuthService : IAuthService
     private readonly IQrCardGenerator _card;
     private readonly INotificationService _notify;
 
+    // NUEVO: scope factory para ejecutar tareas background con servicios válidos
+    private readonly IServiceScopeFactory _scopeFactory;
+
     public AuthService(
         AppDbContext db,
         IJwtTokenService jwt,
         IQrService qr,
         IQrCardGenerator card,
-        INotificationService notify)
+        INotificationService notify,
+        IServiceScopeFactory scopeFactory // <— inyectado por DI
+    )
     {
         _db = db;
         _jwt = jwt;
         _qr  = qr;
         _card = card;
         _notify = notify;
+        _scopeFactory = scopeFactory;
     }
 
-    /// <summary>
-    /// Intenta hashear usando la función MySQL: SELECT fn_encriptar_password(@p).
-    /// Si falla o devuelve vacío, realiza fallback a SHA-256 HEX local.
-    /// </summary>
     private async Task<string> DbHashAsync(string plain)
     {
         var input = plain ?? string.Empty;
@@ -59,8 +64,6 @@ public class AuthService : IAuthService
             try
             {
                 await using var cmd = conn.CreateCommand();
-                // Nota: con Pomelo/MySqlConnector los parámetros con @ funcionan correctamente.
-                // Si tu servidor requiere '?', cambia a "SELECT fn_encriptar_password(?);" y deja el nombre @p.
                 cmd.CommandText = "SELECT fn_encriptar_password(@p);";
                 var p = cmd.CreateParameter();
                 p.ParameterName = "@p";
@@ -76,31 +79,25 @@ public class AuthService : IAuthService
                     return dbHash!;
                 }
 
-                Console.WriteLine("[HASH] fn_encriptar_password devolvió vacío/NULL. Se usará fallback SHA-256.");
+                Console.WriteLine("[HASH] fn_encriptar_password devolvió vacío/NULL. Fallback SHA-256.");
             }
             catch (DbException ex)
             {
-                // Función no existe o no hay permisos
-                Console.WriteLine($"[HASH] Error al invocar fn_encriptar_password: {ex.Message}. Se usará fallback SHA-256.");
+                Console.WriteLine($"[HASH] Error al invocar fn_encriptar_password: {ex.Message}. Fallback SHA-256.");
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[HASH] Error inesperado al invocar fn_encriptar_password: {ex.Message}. Se usará fallback SHA-256.");
+                Console.WriteLine($"[HASH] Error inesperado: {ex.Message}. Fallback SHA-256.");
             }
 
-            // === Fallback SHA-256 HEX (en mayúsculas) ===
             return ComputeSha256Hex(input);
         }
         finally
         {
-            if (shouldClose)
-            {
-                await conn.CloseAsync();
-            }
+            if (shouldClose) await conn.CloseAsync();
         }
     }
 
-    // SHA-256 HEX (mayúsculas) — consistente para nuevos registros y login.
     private static string ComputeSha256Hex(string input)
     {
         using var sha = SHA256.Create();
@@ -113,10 +110,10 @@ public class AuthService : IAuthService
     // ================== Registro ==================
     public async Task<AuthResponse> RegisterAsync(RegisterRequest dto)
     {
+        // Este AnyAsync será muy rápido si existen índices únicos en usuario/email (ver AppDbContext)
         if (await _db.Usuarios.AnyAsync(u => u.UsuarioNombre == dto.Usuario || u.Email == dto.Email))
             throw new InvalidOperationException("Usuario o email ya existen.");
 
-        // 1) Hash robusto
         var hash = await DbHashAsync(dto.Password);
 
         var user = new Usuario
@@ -134,36 +131,38 @@ public class AuthService : IAuthService
         _db.Usuarios.Add(user);
         await _db.SaveChangesAsync();
 
-        // Garantiza Id
         if (user.Id <= 0)
         {
             await _db.Entry(user).ReloadAsync();
             if (user.Id <= 0) throw new InvalidOperationException("No se pudo obtener el Id del usuario insertado.");
         }
 
-        // 2) Crea sesión
         var resp = await LoginInternalAsync(user, MetodoLogin.password);
 
-        // 3) Confirmar transacción antes del correo
         await tx.CommitAsync();
         Console.WriteLine($"[REGISTER] Usuario {user.Id} creado y sesión generada.");
 
-        // 4) Disparar envío de PDF/QR (no debe romper el flujo si falla)
-        try
+        // ⚡️ PERFORMANCE: NO bloquear el request esperando enviar el PDF
+        //    Disparamos la tarea en background en un scope nuevo, para tener DbContext/servicios válidos.
+        _ = Task.Run(async () =>
         {
-            await SendCardNowAsync(user.Id);
-            Console.WriteLine($"[MAIL] Envío de credenciales disparado al registrar usuario={user.Id}.");
-        }
-        catch (Exception ex)
-        {
-            // Nunca provocar 500 por correo
-            Console.WriteLine($"[MAIL] ERROR posregistro usuario={user.Id}: {ex.Message}");
-        }
+            try
+            {
+                using var scope = _scopeFactory.CreateScope();
+                var svc = scope.ServiceProvider.GetRequiredService<IAuthService>();
+                await svc.SendCardNowAsync(user.Id);
+                Console.WriteLine($"[MAIL] (bg) Envío de credenciales OK usuario={user.Id}");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[MAIL] (bg) ERROR usuario={user.Id}: {ex.Message}");
+            }
+        });
 
         return resp;
     }
 
-    // ================== Login (compara contra DbHashAsync para coherencia) ==================
+    // ================== Login ==================
     public async Task<AuthResponse> LoginAsync(LoginRequest dto)
     {
         var user = await _db.Usuarios
@@ -175,14 +174,12 @@ public class AuthService : IAuthService
 
         var incoming = await DbHashAsync(dto.Password);
 
-        // Comparación case-insensitive por seguridad
         if (!string.Equals(incoming, user.PasswordHash, StringComparison.OrdinalIgnoreCase))
             throw new UnauthorizedAccessException("Credenciales inválidas.");
 
         return await LoginInternalAsync(user, MetodoLogin.password);
     }
 
-    // ============ Login usando QR del CARNET ============
     public async Task<AuthResponse> LoginByCarnetQrAsync(string codigoQr)
     {
         if (string.IsNullOrWhiteSpace(codigoQr))
@@ -195,7 +192,6 @@ public class AuthService : IAuthService
         return await LoginInternalAsync(user, MetodoLogin.qr);
     }
 
-    // ============ Logout ============
     public async Task LogoutAsync(string bearerToken)
     {
         var token = bearerToken?.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) == true
@@ -300,7 +296,6 @@ public class AuthService : IAuthService
         }
         catch (Exception ex)
         {
-            // Importante: no lanzar
             Console.WriteLine($"[MAIL] ERROR enviando email usuario={usuarioId}: {ex.Message}");
         }
     }
@@ -354,7 +349,6 @@ public class AuthService : IAuthService
             }
             catch
             {
-                // Intento url-safe
                 b64 = b64.Replace('-', '+').Replace('_', '/');
                 var mod2 = b64.Length % 4;
                 if (mod2 != 0) b64 = b64.PadRight(b64.Length + (4 - mod2), '=');
