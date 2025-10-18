@@ -45,3 +45,19 @@ C:\Users\Christian\Desktop\backend\src\Application\lexico\obj\Debug\net8.0\Lexic
 C:\Users\Christian\Desktop\backend\src\Application\lexico\obj\Debug\net8.0\refint\Lexico.Application.dll
 C:\Users\Christian\Desktop\backend\src\Application\lexico\obj\Debug\net8.0\Lexico.Application.pdb
 C:\Users\Christian\Desktop\backend\src\Application\lexico\obj\Debug\net8.0\ref\Lexico.Application.dll
+C:\Users\DELL\Desktop\Proyecto de Automatas\pruebaProyectoUnido\src\Application\lexico\bin\Debug\net8.0\Lexico.Application.deps.json
+C:\Users\DELL\Desktop\Proyecto de Automatas\pruebaProyectoUnido\src\Application\lexico\bin\Debug\net8.0\Lexico.Application.dll
+C:\Users\DELL\Desktop\Proyecto de Automatas\pruebaProyectoUnido\src\Application\lexico\bin\Debug\net8.0\Lexico.Application.pdb
+C:\Users\DELL\Desktop\Proyecto de Automatas\pruebaProyectoUnido\src\Application\lexico\bin\Debug\net8.0\Lexico.Domain.dll
+C:\Users\DELL\Desktop\Proyecto de Automatas\pruebaProyectoUnido\src\Application\lexico\bin\Debug\net8.0\Lexico.Domain.pdb
+C:\Users\DELL\Desktop\Proyecto de Automatas\pruebaProyectoUnido\src\Application\lexico\obj\Debug\net8.0\Lexico.Application.csproj.AssemblyReference.cache
+C:\Users\DELL\Desktop\Proyecto de Automatas\pruebaProyectoUnido\src\Application\lexico\obj\Debug\net8.0\Lexico.Application.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\DELL\Desktop\Proyecto de Automatas\pruebaProyectoUnido\src\Application\lexico\obj\Debug\net8.0\Lexico.Application.AssemblyInfoInputs.cache
+C:\Users\DELL\Desktop\Proyecto de Automatas\pruebaProyectoUnido\src\Application\lexico\obj\Debug\net8.0\Lexico.Application.AssemblyInfo.cs
+C:\Users\DELL\Desktop\Proyecto de Automatas\pruebaProyectoUnido\src\Application\lexico\obj\Debug\net8.0\Lexico.Application.csproj.CoreCompileInputs.cache
+C:\Users\DELL\Desktop\Proyecto de Automatas\pruebaProyectoUnido\src\Application\lexico\obj\Debug\net8.0\Lexico.Application.sourcelink.json
+C:\Users\DELL\Desktop\Proyecto de Automatas\pruebaProyectoUnido\src\Application\lexico\obj\Debug\net8.0\Lexico.A.831D9A1D.Up2Date
+C:\Users\DELL\Desktop\Proyecto de Automatas\pruebaProyectoUnido\src\Application\lexico\obj\Debug\net8.0\Lexico.Application.dll
+C:\Users\DELL\Desktop\Proyecto de Automatas\pruebaProyectoUnido\src\Application\lexico\obj\Debug\net8.0\refint\Lexico.Application.dll
+C:\Users\DELL\Desktop\Proyecto de Automatas\pruebaProyectoUnido\src\Application\lexico\obj\Debug\net8.0\Lexico.Application.pdb
+C:\Users\DELL\Desktop\Proyecto de Automatas\pruebaProyectoUnido\src\Application\lexico\obj\Debug\net8.0\ref\Lexico.Application.dll

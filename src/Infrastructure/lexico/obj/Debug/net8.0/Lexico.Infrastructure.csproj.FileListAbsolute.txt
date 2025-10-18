@@ -51,3 +51,21 @@ C:\Users\Christian\Desktop\backend\src\Infrastructure\lexico\obj\Debug\net8.0\Le
 C:\Users\Christian\Desktop\backend\src\Infrastructure\lexico\obj\Debug\net8.0\refint\Lexico.Infrastructure.dll
 C:\Users\Christian\Desktop\backend\src\Infrastructure\lexico\obj\Debug\net8.0\Lexico.Infrastructure.pdb
 C:\Users\Christian\Desktop\backend\src\Infrastructure\lexico\obj\Debug\net8.0\ref\Lexico.Infrastructure.dll
+C:\Users\DELL\Desktop\Proyecto de Automatas\pruebaProyectoUnido\src\Infrastructure\lexico\bin\Debug\net8.0\Lexico.Infrastructure.deps.json
+C:\Users\DELL\Desktop\Proyecto de Automatas\pruebaProyectoUnido\src\Infrastructure\lexico\bin\Debug\net8.0\Lexico.Infrastructure.dll
+C:\Users\DELL\Desktop\Proyecto de Automatas\pruebaProyectoUnido\src\Infrastructure\lexico\bin\Debug\net8.0\Lexico.Infrastructure.pdb
+C:\Users\DELL\Desktop\Proyecto de Automatas\pruebaProyectoUnido\src\Infrastructure\lexico\bin\Debug\net8.0\Lexico.Application.dll
+C:\Users\DELL\Desktop\Proyecto de Automatas\pruebaProyectoUnido\src\Infrastructure\lexico\bin\Debug\net8.0\Lexico.Domain.dll
+C:\Users\DELL\Desktop\Proyecto de Automatas\pruebaProyectoUnido\src\Infrastructure\lexico\bin\Debug\net8.0\Lexico.Domain.pdb
+C:\Users\DELL\Desktop\Proyecto de Automatas\pruebaProyectoUnido\src\Infrastructure\lexico\bin\Debug\net8.0\Lexico.Application.pdb
+C:\Users\DELL\Desktop\Proyecto de Automatas\pruebaProyectoUnido\src\Infrastructure\lexico\obj\Debug\net8.0\Lexico.Infrastructure.csproj.AssemblyReference.cache
+C:\Users\DELL\Desktop\Proyecto de Automatas\pruebaProyectoUnido\src\Infrastructure\lexico\obj\Debug\net8.0\Lexico.Infrastructure.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\DELL\Desktop\Proyecto de Automatas\pruebaProyectoUnido\src\Infrastructure\lexico\obj\Debug\net8.0\Lexico.Infrastructure.AssemblyInfoInputs.cache
+C:\Users\DELL\Desktop\Proyecto de Automatas\pruebaProyectoUnido\src\Infrastructure\lexico\obj\Debug\net8.0\Lexico.Infrastructure.AssemblyInfo.cs
+C:\Users\DELL\Desktop\Proyecto de Automatas\pruebaProyectoUnido\src\Infrastructure\lexico\obj\Debug\net8.0\Lexico.Infrastructure.csproj.CoreCompileInputs.cache
+C:\Users\DELL\Desktop\Proyecto de Automatas\pruebaProyectoUnido\src\Infrastructure\lexico\obj\Debug\net8.0\Lexico.Infrastructure.sourcelink.json
+C:\Users\DELL\Desktop\Proyecto de Automatas\pruebaProyectoUnido\src\Infrastructure\lexico\obj\Debug\net8.0\Lexico.I.1E35C610.Up2Date
+C:\Users\DELL\Desktop\Proyecto de Automatas\pruebaProyectoUnido\src\Infrastructure\lexico\obj\Debug\net8.0\Lexico.Infrastructure.dll
+C:\Users\DELL\Desktop\Proyecto de Automatas\pruebaProyectoUnido\src\Infrastructure\lexico\obj\Debug\net8.0\refint\Lexico.Infrastructure.dll
+C:\Users\DELL\Desktop\Proyecto de Automatas\pruebaProyectoUnido\src\Infrastructure\lexico\obj\Debug\net8.0\Lexico.Infrastructure.pdb
+C:\Users\DELL\Desktop\Proyecto de Automatas\pruebaProyectoUnido\src\Infrastructure\lexico\obj\Debug\net8.0\ref\Lexico.Infrastructure.dll

@@ -1,33 +1,40 @@
 {
   "format": 1,
   "restore": {
-    "C:\\Users\\Christian\\Desktop\\backend - copia\\src\\Application\\auth\\Auth.Application.csproj": {}
+    "C:\\Users\\DELL\\Desktop\\Proyecto de Automatas\\pruebaProyectoUnido\\src\\Application\\auth\\Auth.Application.csproj": {}
   },
   "projects": {
-    "C:\\Users\\Christian\\Desktop\\backend - copia\\src\\Application\\auth\\Auth.Application.csproj": {
+    "C:\\Users\\DELL\\Desktop\\Proyecto de Automatas\\pruebaProyectoUnido\\src\\Application\\auth\\Auth.Application.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "C:\\Users\\Christian\\Desktop\\backend - copia\\src\\Application\\auth\\Auth.Application.csproj",
+        "projectUniqueName": "C:\\Users\\DELL\\Desktop\\Proyecto de Automatas\\pruebaProyectoUnido\\src\\Application\\auth\\Auth.Application.csproj",
         "projectName": "Auth.Application",
-        "projectPath": "C:\\Users\\Christian\\Desktop\\backend - copia\\src\\Application\\auth\\Auth.Application.csproj",
-        "packagesPath": "C:\\Users\\Christian\\.nuget\\packages\\",
-        "outputPath": "C:\\Users\\Christian\\Desktop\\backend - copia\\src\\Application\\auth\\obj\\",
+        "projectPath": "C:\\Users\\DELL\\Desktop\\Proyecto de Automatas\\pruebaProyectoUnido\\src\\Application\\auth\\Auth.Application.csproj",
+        "packagesPath": "C:\\Users\\DELL\\.nuget\\packages\\",
+        "outputPath": "C:\\Users\\DELL\\Desktop\\Proyecto de Automatas\\pruebaProyectoUnido\\src\\Application\\auth\\obj\\",
         "projectStyle": "PackageReference",
+        "fallbackFolders": [
+          "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
+        ],
         "configFilePaths": [
-          "C:\\Users\\Christian\\AppData\\Roaming\\NuGet\\NuGet.Config"
+          "C:\\Users\\DELL\\AppData\\Roaming\\NuGet\\NuGet.Config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.FallbackLocation.config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
         ],
         "originalTargetFrameworks": [
           "net8.0"
         ],
         "sources": {
+          "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
+          "C:\\Program Files\\dotnet\\library-packs": {},
           "https://api.nuget.org/v3/index.json": {}
         },
         "frameworks": {
           "net8.0": {
             "targetAlias": "net8.0",
             "projectReferences": {
-              "C:\\Users\\Christian\\Desktop\\backend - copia\\src\\Domain\\auth\\Auth.Domain.csproj": {
-                "projectPath": "C:\\Users\\Christian\\Desktop\\backend - copia\\src\\Domain\\auth\\Auth.Domain.csproj"
+              "C:\\Users\\DELL\\Desktop\\Proyecto de Automatas\\pruebaProyectoUnido\\src\\Domain\\auth\\Auth.Domain.csproj": {
+                "projectPath": "C:\\Users\\DELL\\Desktop\\Proyecto de Automatas\\pruebaProyectoUnido\\src\\Domain\\auth\\Auth.Domain.csproj"
               }
             }
           }
@@ -66,22 +73,29 @@
         }
       }
     },
-    "C:\\Users\\Christian\\Desktop\\backend - copia\\src\\Domain\\auth\\Auth.Domain.csproj": {
+    "C:\\Users\\DELL\\Desktop\\Proyecto de Automatas\\pruebaProyectoUnido\\src\\Domain\\auth\\Auth.Domain.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "C:\\Users\\Christian\\Desktop\\backend - copia\\src\\Domain\\auth\\Auth.Domain.csproj",
+        "projectUniqueName": "C:\\Users\\DELL\\Desktop\\Proyecto de Automatas\\pruebaProyectoUnido\\src\\Domain\\auth\\Auth.Domain.csproj",
         "projectName": "Auth.Domain",
-        "projectPath": "C:\\Users\\Christian\\Desktop\\backend - copia\\src\\Domain\\auth\\Auth.Domain.csproj",
-        "packagesPath": "C:\\Users\\Christian\\.nuget\\packages\\",
-        "outputPath": "C:\\Users\\Christian\\Desktop\\backend - copia\\src\\Domain\\auth\\obj\\",
+        "projectPath": "C:\\Users\\DELL\\Desktop\\Proyecto de Automatas\\pruebaProyectoUnido\\src\\Domain\\auth\\Auth.Domain.csproj",
+        "packagesPath": "C:\\Users\\DELL\\.nuget\\packages\\",
+        "outputPath": "C:\\Users\\DELL\\Desktop\\Proyecto de Automatas\\pruebaProyectoUnido\\src\\Domain\\auth\\obj\\",
         "projectStyle": "PackageReference",
+        "fallbackFolders": [
+          "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
+        ],
         "configFilePaths": [
-          "C:\\Users\\Christian\\AppData\\Roaming\\NuGet\\NuGet.Config"
+          "C:\\Users\\DELL\\AppData\\Roaming\\NuGet\\NuGet.Config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.FallbackLocation.config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
         ],
         "originalTargetFrameworks": [
           "net8.0"
         ],
         "sources": {
+          "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
+          "C:\\Program Files\\dotnet\\library-packs": {},
           "https://api.nuget.org/v3/index.json": {}
         },
         "frameworks": {

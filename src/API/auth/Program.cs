@@ -88,12 +88,24 @@ builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.Configure<EmailOptions>(builder.Configuration.GetSection("Email"));
 builder.Services.Configure<FacialOptions>(builder.Configuration.GetSection("FaceLogin"));
-if (builder.Environment.IsDevelopment())
-    builder.Services.AddScoped<INotificationService, SmtpEmailNotificationService>();
-else
-    builder.Services.AddScoped<INotificationService, SendGridEmailNotificationService>();
-builder.Services.AddScoped<IFacialAuthService, FacialAuthService>();
 
+// ======== Selección de proveedor de correo (auto) ========
+var sendGridApiKey = builder.Configuration["SendGrid:ApiKey"]
+                     ?? Environment.GetEnvironmentVariable("SENDGRID_API_KEY");
+
+// Si hay API key => SendGrid; si no, usa SMTP (Gmail, ya configurado en Email:*).
+if (!string.IsNullOrWhiteSpace(sendGridApiKey))
+{
+    Console.WriteLine("[MAIL] Provider = SendGrid (ApiKey detectada).");
+    builder.Services.AddScoped<INotificationService, SendGridEmailNotificationService>();
+}
+else
+{
+    Console.WriteLine("[MAIL] Provider = SMTP (usando sección Email).");
+    builder.Services.AddScoped<INotificationService, SmtpEmailNotificationService>();
+}
+
+builder.Services.AddScoped<IFacialAuthService, FacialAuthService>();
 builder.Services.AddScoped<IQrService, QrService>();
 builder.Services.AddScoped<IQrCardGenerator, QrCardGenerator>();
 builder.Services.AddControllers();
@@ -247,6 +259,5 @@ app.MapGet("/health/db", async (AppDbContext db) =>
         return Results.Problem(title: "DB error", detail: ex.Message, statusCode: 500);
     }
 });
-
 
 app.Run();
