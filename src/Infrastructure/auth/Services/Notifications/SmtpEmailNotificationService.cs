@@ -13,7 +13,7 @@ public class SmtpEmailNotificationService : INotificationService
 
     // =======================
     // 1) Sobrecarga usada (parámetros separados)
-    //    -> ahora con Timeout y CancellationToken
+    //    -> con Timeout y CancellationToken
     // =======================
     public async Task SendEmailAsync(
         string toEmail,
@@ -50,8 +50,9 @@ public class SmtpEmailNotificationService : INotificationService
         var builder = new BodyBuilder { HtmlBody = htmlBody ?? string.Empty };
         if (!string.IsNullOrWhiteSpace(attachmentName) && attachmentBytes is not null && attachmentBytes.Length > 0)
         {
-            var ct = string.IsNullOrWhiteSpace(attachmentContentType) ? "application/pdf" : attachmentContentType!;
-            builder.Attachments.Add(attachmentName, attachmentBytes, ContentType.Parse(ct));
+            // Renombrado para evitar conflicto con CancellationToken "ct"
+            var contentTypeStr = string.IsNullOrWhiteSpace(attachmentContentType) ? "application/pdf" : attachmentContentType!;
+            builder.Attachments.Add(attachmentName, attachmentBytes, ContentType.Parse(contentTypeStr));
         }
         msg.Body = builder.ToMessageBody();
 
@@ -68,12 +69,12 @@ public class SmtpEmailNotificationService : INotificationService
 
         // Cancelación de toda la operación si excede 12s
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(12));
-        var ct = cts.Token;
+        var cancelToken = cts.Token;
 
-        await smtp.ConnectAsync(host, port, security, ct);
-        await smtp.AuthenticateAsync(user, pass, ct);
-        await smtp.SendAsync(msg, ct);
-        await smtp.DisconnectAsync(true, ct);
+        await smtp.ConnectAsync(host, port, security, cancelToken);
+        await smtp.AuthenticateAsync(user, pass, cancelToken);
+        await smtp.SendAsync(msg, cancelToken);
+        await smtp.DisconnectAsync(true, cancelToken);
     }
 
     // ============================
