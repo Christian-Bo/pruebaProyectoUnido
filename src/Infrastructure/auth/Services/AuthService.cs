@@ -24,16 +24,7 @@ namespace Auth.Infrastructure.Services;
 /// - Consultas optimizadas con AsNoTracking
 /// - Manejo robusto de errores sin romper el flujo
 /// - Logging estructurado
-/// 
-/// ARQUITECTURA:
-/// 1. RegisterAsync: Crea usuario + sesión, encola email
-/// 2. EmailDispatcherBackgroundService: Procesa emails con reintentos
-/// 3. SendCardNowAsync: Genera PDF/QR y envía (con manejo de errores)
-/// 
-/// ESCALABILIDAD:
-/// - Para multi-tenant: Inyectar DbContext por tenant
-/// - Para microservicios: Extraer email a servicio separado
-/// - Para alta concurrencia: Implementar CQRS con MediatR
+/// - FIX: Uso correcto de ExecutionStrategy con transacciones
 /// </summary>
 public class AuthService : IAuthService
 {
@@ -41,7 +32,7 @@ public class AuthService : IAuthService
     private readonly IJwtTokenService _jwt;
     private readonly IQrService _qr;
     private readonly IQrCardGenerator _card;
-    private readonly IEmailJobQueue _emailQueue; // MEJORA: Usar cola en lugar de INotificationService directo
+    private readonly IEmailJobQueue _emailQueue;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<AuthService> _logger;
 
@@ -50,7 +41,7 @@ public class AuthService : IAuthService
         IJwtTokenService jwt,
         IQrService qr,
         IQrCardGenerator card,
-        IEmailJobQueue emailQueue, // CRÍTICO: Inyectar cola
+        IEmailJobQueue emailQueue,
         IServiceScopeFactory scopeFactory,
         ILogger<AuthService> logger)
     {
@@ -65,19 +56,6 @@ public class AuthService : IAuthService
 
     // ================== HASHING DE CONTRASEÑAS ==================
     
-    /// <summary>
-    /// Hash de contraseña usando función de BD (con fallback a SHA-256).
-    /// 
-    /// VENTAJAS:
-    /// - Consistencia con sistema legacy
-    /// - Función centralizada en BD
-    /// 
-    /// DESVENTAJAS:
-    /// - No es bcrypt/argon2 (menos seguro)
-    /// - Dependencia de BD
-    /// 
-    /// MEJORA FUTURA: Migrar a ASP.NET Core Identity con bcrypt/argon2
-    /// </summary>
     private async Task<string> DbHashAsync(string plain)
     {
         var input = plain ?? string.Empty;
@@ -96,7 +74,7 @@ public class AuthService : IAuthService
             {
                 await using var cmd = conn.CreateCommand();
                 cmd.CommandText = "SELECT fn_encriptar_password(@p);";
-                cmd.CommandTimeout = 5; // MEJORA: Timeout corto
+                cmd.CommandTimeout = 5;
                 
                 var p = cmd.CreateParameter();
                 p.ParameterName = "@p";
@@ -119,7 +97,6 @@ public class AuthService : IAuthService
                 _logger.LogWarning(ex, "[HASH] Error al invocar fn_encriptar_password. Fallback SHA-256.");
             }
 
-            // Fallback: SHA-256 (menos seguro pero funcional)
             return ComputeSha256Hex(input);
         }
         finally 
@@ -132,30 +109,20 @@ public class AuthService : IAuthService
     {
         using var sha = SHA256.Create();
         var bytes = sha.ComputeHash(Encoding.UTF8.GetBytes(input ?? string.Empty));
-        return Convert.ToHexString(bytes); // .NET 5+ optimizado
+        return Convert.ToHexString(bytes);
     }
 
-    // ================== REGISTRO (NO BLOQUEANTE) ==================
+    // ================== REGISTRO (FIX: ExecutionStrategy) ==================
     
     /// <summary>
     /// Registra usuario y retorna token inmediatamente.
     /// Email con carnet se envía en background (NO bloquea respuesta).
     /// 
-    /// FLUJO:
-    /// 1. Validar duplicados
-    /// 2. Hash password
-    /// 3. Insertar usuario + generar sesión
-    /// 4. ENCOLAR email (sin esperar)
-    /// 5. Retornar token al cliente
-    /// 
-    /// VENTAJAS:
-    /// - Respuesta rápida (<500ms típico)
-    /// - Email se envía con reintentos automáticos
-    /// - Errores de email no rompen el registro
+    /// FIX CRÍTICO: Usa ExecutionStrategy para compatibilidad con EnableRetryOnFailure
     /// </summary>
     public async Task<AuthResponse> RegisterAsync(RegisterRequest dto)
     {
-        // Validación de duplicados (MEJORA: Índice compuesto en BD)
+        // Validación de duplicados
         var existeDuplicado = await _db.Usuarios
             .AsNoTracking()
             .AnyAsync(u => u.UsuarioNombre == dto.Usuario || u.Email == dto.Email);
@@ -180,28 +147,47 @@ public class AuthService : IAuthService
             Activo = true
         };
 
-        // Transacción para usuario + sesión
-        await using var tx = await _db.Database.BeginTransactionAsync();
+        // ===== FIX CRÍTICO: Usar ExecutionStrategy =====
+        // Cuando EnableRetryOnFailure está habilitado, debemos usar
+        // la estrategia de ejecución para manejar transacciones
+        var strategy = _db.Database.CreateExecutionStrategy();
+        
+        AuthResponse resp = null!;
 
-        _db.Usuarios.Add(user);
-        await _db.SaveChangesAsync();
-
-        // CRÍTICO: Asegurar que el ID se generó
-        if (user.Id <= 0)
+        await strategy.ExecuteAsync(async () =>
         {
-            await _db.Entry(user).ReloadAsync();
-            if (user.Id <= 0)
+            // Transacción dentro de la estrategia
+            await using var tx = await _db.Database.BeginTransactionAsync();
+
+            try
+            {
+                _db.Usuarios.Add(user);
+                await _db.SaveChangesAsync();
+
+                // Asegurar que el ID se generó
+                if (user.Id <= 0)
+                {
+                    await _db.Entry(user).ReloadAsync();
+                    if (user.Id <= 0)
+                    {
+                        await tx.RollbackAsync();
+                        throw new InvalidOperationException("No se pudo obtener el ID del usuario insertado.");
+                    }
+                }
+
+                // Generar sesión y token
+                resp = await LoginInternalAsync(user, MetodoLogin.password);
+                
+                await tx.CommitAsync();
+
+                _logger.LogInformation("[REGISTER] Usuario {UserId} creado exitosamente.", user.Id);
+            }
+            catch
             {
                 await tx.RollbackAsync();
-                throw new InvalidOperationException("No se pudo obtener el ID del usuario insertado.");
+                throw;
             }
-        }
-
-        // Generar sesión y token
-        var resp = await LoginInternalAsync(user, MetodoLogin.password);
-        await tx.CommitAsync();
-
-        _logger.LogInformation("[REGISTER] Usuario {UserId} creado exitosamente.", user.Id);
+        });
 
         // ====== ENVÍO DE EMAIL EN BACKGROUND (NO BLOQUEA) ======
         _ = Task.Run(async () =>
@@ -220,7 +206,6 @@ public class AuthService : IAuthService
             }
             catch (Exception ex)
             {
-                // NO romper el registro si falla el email
                 _logger.LogError(ex, "[REGISTER] Error al encolar email para usuario {UserId}", user.Id);
             }
         });
@@ -245,7 +230,6 @@ public class AuthService : IAuthService
 
         var incoming = await DbHashAsync(dto.Password);
         
-        // Comparación case-insensitive (consistente con BD)
         if (!string.Equals(incoming, user.PasswordHash, StringComparison.OrdinalIgnoreCase))
         {
             _logger.LogWarning("[LOGIN] Password incorrecto para usuario {UserId}", user.Id);
@@ -337,27 +321,12 @@ public class AuthService : IAuthService
 
     // ================== ENVÍO DE CARNET (OPTIMIZADO) ==================
     
-    /// <summary>
-    /// Genera y envía carnet con QR por email.
-    /// 
-    /// OPTIMIZACIONES:
-    /// - Consulta única para foto (sin cargar toda la entidad)
-    /// - Generación rápida de PDF (<100ms típico)
-    /// - Encolado de email (no espera envío)
-    /// - Manejo robusto de errores (no lanza excepciones)
-    /// 
-    /// MEJORA FUTURA:
-    /// - Cachear QR en Redis (evitar regeneración)
-    /// - Almacenar PDF en blob storage (S3/Azure Storage)
-    /// - Implementar rate limiting por usuario
-    /// </summary>
     public async Task SendCardNowAsync(int usuarioId)
     {
         _logger.LogInformation("[SEND-CARD] Iniciando para usuario {UserId}", usuarioId);
 
         try
         {
-            // 1. Obtener usuario (validación)
             var user = await _db.Usuarios
                 .AsNoTracking()
                 .FirstOrDefaultAsync(u => u.Id == usuarioId && u.Activo);
@@ -365,10 +334,9 @@ public class AuthService : IAuthService
             if (user is null)
             {
                 _logger.LogWarning("[SEND-CARD] Usuario {UserId} no existe o está inactivo.", usuarioId);
-                return; // NO lanzar excepción
+                return;
             }
 
-            // 2. Obtener/crear QR (una sola operación)
             var qr = await _qr.GetOrCreateUserQrAsync(user.Id);
             
             if (qr is null || string.IsNullOrWhiteSpace(qr.Codigo))
@@ -377,7 +345,6 @@ public class AuthService : IAuthService
                 return;
             }
 
-            // 3. Obtener foto (consulta optimizada)
             var fotoBytes = await TryGetUserPhotoBytesAsync(usuarioId);
             
             if (fotoBytes is null)
@@ -385,7 +352,6 @@ public class AuthService : IAuthService
                 _logger.LogInformation("[SEND-CARD] Usuario {UserId} sin foto, generando carnet sin imagen", usuarioId);
             }
 
-            // 4. Generar PDF (rápido: <100ms típico)
             var pdf = _card.GenerateRegistrationPdf(
                 fullName: user.NombreCompleto,
                 userName: user.UsuarioNombre,
@@ -394,7 +360,6 @@ public class AuthService : IAuthService
                 fotoBytes: fotoBytes
             );
 
-            // 5. HTML del email
             var bodyHtml = $@"
                 <html>
                 <body style='font-family: Arial, sans-serif;'>
@@ -409,7 +374,6 @@ public class AuthService : IAuthService
                 </body>
                 </html>";
 
-            // 6. ENCOLAR EMAIL (no espera envío)
             var job = new EmailJob(
                 To: user.Email,
                 Subject: "Tu carnet de acceso con código QR",
@@ -426,31 +390,16 @@ public class AuthService : IAuthService
         }
         catch (Exception ex)
         {
-            // Log pero NO lanzar (no romper flujo de registro)
             _logger.LogError(ex, "[SEND-CARD] Error inesperado para usuario {UserId}", usuarioId);
         }
     }
 
     // ================== HELPER: OBTENER FOTO ==================
     
-    /// <summary>
-    /// Obtiene foto de usuario desde BD.
-    /// 
-    /// OPTIMIZACIONES:
-    /// - Consulta proyectada (solo campos necesarios)
-    /// - AsNoTracking (sin rastreo de cambios)
-    /// - Manejo robusto de Base64 malformado
-    /// 
-    /// MEJORA FUTURA:
-    /// - Almacenar fotos en blob storage (no en BD)
-    /// - Cachear en Redis/Memory Cache
-    /// - Implementar lazy loading con CDN
-    /// </summary>
     private async Task<byte[]?> TryGetUserPhotoBytesAsync(int usuarioId)
     {
         try
         {
-            // Prioridad: Activa más reciente
             var row = await _db.AutenticacionFacial
                 .AsNoTracking()
                 .Where(a => a.UsuarioId == usuarioId && a.Activo)
@@ -458,7 +407,6 @@ public class AuthService : IAuthService
                 .Select(a => new { a.Id, a.ImagenReferencia })
                 .FirstOrDefaultAsync();
 
-            // Fallback: Cualquier fila (incluso inactiva)
             if (row is null)
             {
                 _logger.LogDebug("[FOTO] No hay activa para usuario {UserId}, buscando última...", usuarioId);
@@ -480,14 +428,12 @@ public class AuthService : IAuthService
             if (string.IsNullOrWhiteSpace(row.ImagenReferencia))
                 return null;
 
-            // Limpiar y decodificar Base64
             string b64 = StripDataUrlPrefix(row.ImagenReferencia!);
             b64 = b64.Trim()
                      .Replace("\r", "", StringComparison.Ordinal)
                      .Replace("\n", "", StringComparison.Ordinal)
                      .Replace(" ", "+", StringComparison.Ordinal);
 
-            // Padding correcto
             var mod = b64.Length % 4;
             if (mod != 0) 
                 b64 = b64.PadRight(b64.Length + (4 - mod), '=');
@@ -501,7 +447,6 @@ public class AuthService : IAuthService
             }
             catch
             {
-                // Intentar Base64 URL-safe
                 b64 = b64.Replace('-', '+').Replace('_', '/');
                 var mod2 = b64.Length % 4;
                 if (mod2 != 0) 
@@ -527,10 +472,6 @@ public class AuthService : IAuthService
         }
     }
 
-    /// <summary>
-    /// Remueve prefijo data:image/... de Base64.
-    /// Ejemplo: "data:image/jpeg;base64,/9j/4AAQ..." -> "/9j/4AAQ..."
-    /// </summary>
     private static string StripDataUrlPrefix(string input)
     {
         const string marker = ";base64,";
