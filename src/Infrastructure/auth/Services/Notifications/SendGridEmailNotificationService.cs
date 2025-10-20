@@ -8,21 +8,22 @@ using SendGrid.Helpers.Mail;
 namespace Auth.Infrastructure.Services.Notifications
 {
     /// <summary>
-    /// Servicio de notificaciones vía SendGrid (Production).
+    /// Servicio de notificaciones vía SendGrid (Único proveedor de email).
     /// 
-    /// MEJORAS IMPLEMENTADAS:
-    /// - Timeout explícito para evitar cuelgues
-    /// - Manejo robusto de errores con información detallada
-    /// - Soporte para múltiples destinatarios (CC/BCC) - FUTURO
-    /// - Rate limiting awareness - FUTURO
+    /// OPTIMIZADO PARA RAILWAY:
+    /// - Solo usa API HTTP (no SMTP bloqueado)
+    /// - Timeout de 30 segundos para adjuntos grandes
+    /// - Reintentos automáticos en background service
+    /// - Validación robusta de configuración
     /// 
-    /// LIMITACIONES:
-    /// - No usa IHttpClientFactory (SendGrid lo gestiona internamente)
-    /// - Timeout se controla desde Program.cs vía HttpClient named "sendgrid"
+    /// CONFIGURACIÓN REQUERIDA:
+    /// - Variable de entorno: SENDGRID_API_KEY (Railway)
+    /// - O appsettings.json: SendGrid:ApiKey
+    /// - SendGrid:From en appsettings.json
     /// 
-    /// ESCALABILIDAD:
-    /// - Para volumen alto (>10k emails/día): Usar SendGrid API con batch
-    /// - Para multi-tenant: Inyectar API Key por tenant dinámicamente
+    /// IMPORTANTE:
+    /// - Verificar remitente en SendGrid Dashboard
+    /// - Límite gratuito: 100 emails/día
     /// </summary>
     public class SendGridEmailNotificationService : INotificationService
     {
@@ -44,30 +45,50 @@ namespace Auth.Infrastructure.Services.Notifications
             byte[]? attachmentBytes = null,
             string? attachmentContentType = null)
         {
-            // Validación de entrada
+            // ===== VALIDACIÓN DE ENTRADA =====
             if (string.IsNullOrWhiteSpace(toEmail))
                 throw new ArgumentException("El email de destino está vacío.", nameof(toEmail));
 
-            // API Key: Prioridad ENV > Config
+            // ===== API KEY: Prioridad ENV > Config =====
             var apiKey = Environment.GetEnvironmentVariable("SENDGRID_API_KEY")
                          ?? _cfg["SendGrid:ApiKey"];
             
             if (string.IsNullOrWhiteSpace(apiKey))
-                throw new InvalidOperationException(
-                    "SendGrid API Key no configurada. Establece SENDGRID_API_KEY en ENV o SendGrid:ApiKey en config.");
+            {
+                var errorMsg = "❌ SendGrid API Key no configurada.\n" +
+                              "Solución:\n" +
+                              "1. Railway: Agrega variable SENDGRID_API_KEY\n" +
+                              "2. O en appsettings.json: SendGrid:ApiKey\n" +
+                              "3. Obtén tu API Key en: https://app.sendgrid.com/settings/api_keys";
+                
+                Console.WriteLine(errorMsg);
+                throw new InvalidOperationException(errorMsg);
+            }
 
-            // FROM Address: Prioridad Email:From > SendGrid:From
-            var fromRaw = _cfg["Email:From"] ?? _cfg["SendGrid:From"];
+            // ===== FROM ADDRESS =====
+            var fromRaw = _cfg["SendGrid:From"];
             
             if (string.IsNullOrWhiteSpace(fromRaw))
-                throw new InvalidOperationException(
-                    "Email remitente no configurado. Establece Email:From o SendGrid:From en formato 'Nombre <email@dominio>' o 'email@dominio'.");
+            {
+                var errorMsg = "❌ Email remitente no configurado.\n" +
+                              "Solución: Configura SendGrid:From en appsettings.json\n" +
+                              "Formato: 'Tu Nombre <email@dominio.com>'";
+                
+                Console.WriteLine(errorMsg);
+                throw new InvalidOperationException(errorMsg);
+            }
 
-            // Parsear direcciones
+            // ===== PARSEAR DIRECCIONES =====
             var (fromEmail, fromName) = ParseAddress(fromRaw);
             var (toAddr, toName) = ParseAddress(toEmail);
 
-            // Construir mensaje
+            Console.WriteLine($"[SENDGRID] Preparando email:");
+            Console.WriteLine($"  From: {fromName} <{fromEmail}>");
+            Console.WriteLine($"  To: {toName} <{toAddr}>");
+            Console.WriteLine($"  Subject: {subject}");
+            Console.WriteLine($"  Attachment: {attachmentName ?? "ninguno"}");
+
+            // ===== CONSTRUIR MENSAJE =====
             var msg = new SendGridMessage
             {
                 From = new EmailAddress(fromEmail, fromName),
@@ -76,19 +97,21 @@ namespace Auth.Infrastructure.Services.Notifications
             };
             msg.AddTo(new EmailAddress(toAddr, toName));
 
-            // MEJORA: Agregar texto plano como fallback (buenas prácticas)
+            // Texto plano como fallback
             msg.PlainTextContent = StripHtml(htmlBody ?? string.Empty);
 
-            // Adjuntos (si existen)
+            // ===== ADJUNTOS =====
             if (!string.IsNullOrWhiteSpace(attachmentName) && attachmentBytes is { Length: > 0 })
             {
-                // VALIDACIÓN: Tamaño máximo 10MB (límite de SendGrid)
+                // Validación: Tamaño máximo 10MB (límite de SendGrid)
                 const int maxSize = 10 * 1024 * 1024; // 10 MB
                 if (attachmentBytes.Length > maxSize)
                 {
                     throw new InvalidOperationException(
                         $"Adjunto demasiado grande ({attachmentBytes.Length / (1024 * 1024)}MB). Máximo: 10MB.");
                 }
+
+                Console.WriteLine($"[SENDGRID] Adjunto: {attachmentName} ({attachmentBytes.Length / 1024}KB)");
 
                 var base64 = Convert.ToBase64String(attachmentBytes);
                 var ct = string.IsNullOrWhiteSpace(attachmentContentType)
@@ -98,35 +121,55 @@ namespace Auth.Infrastructure.Services.Notifications
                 msg.AddAttachment(attachmentName, base64, ct);
             }
 
-            // Cliente SendGrid (gestiona HttpClient internamente)
+            // ===== CLIENTE SENDGRID =====
             var client = new SendGridClient(apiKey);
 
             try
             {
-                // CRÍTICO: SendGrid SDK no expone timeout directo.
-                // El timeout se controla desde el HttpClient configurado en Program.cs.
+                Console.WriteLine($"[SENDGRID] Enviando email a {toAddr}...");
+
                 var response = await client.SendEmailAsync(msg);
 
-                // Validar respuesta
+                // ===== VALIDAR RESPUESTA =====
                 if ((int)response.StatusCode >= 400)
                 {
                     var bodyStr = await response.Body.ReadAsStringAsync();
                     
-                    // Log detallado para depuración
-                    Console.WriteLine($"[SENDGRID] ERROR Status={response.StatusCode} Body={bodyStr}");
+                    Console.WriteLine($"[SENDGRID] ❌ ERROR Status={response.StatusCode}");
+                    Console.WriteLine($"[SENDGRID] Response Body: {bodyStr}");
+
+                    // Mensajes de error específicos
+                    string errorMsg;
+                    if ((int)response.StatusCode == 401)
+                    {
+                        errorMsg = "API Key inválida. Verifica SENDGRID_API_KEY en Railway.";
+                    }
+                    else if ((int)response.StatusCode == 403)
+                    {
+                        errorMsg = $"Remitente no verificado: {fromEmail}.\n" +
+                                  "Solución:\n" +
+                                  "1. Ve a https://app.sendgrid.com/settings/sender_auth\n" +
+                                  "2. Clic en 'Verify a Single Sender'\n" +
+                                  "3. Verifica el email que recibirás en {fromEmail}";
+                    }
+                    else
+                    {
+                        errorMsg = $"SendGrid rechazó el email (Status {response.StatusCode}): {bodyStr}";
+                    }
                     
-                    throw new InvalidOperationException(
-                        $"SendGrid rechazó el email. Status={(int)response.StatusCode}. " +
-                        $"Detalle: {bodyStr}");
+                    throw new InvalidOperationException(errorMsg);
                 }
 
-                // Log de éxito
-                Console.WriteLine($"[SENDGRID] ✅ Email enviado a {toAddr} | Status={response.StatusCode}");
+                // ===== ÉXITO =====
+                Console.WriteLine($"[SENDGRID] ✅ Email enviado exitosamente");
+                Console.WriteLine($"[SENDGRID] Status: {response.StatusCode}");
+                Console.WriteLine($"[SENDGRID] Destinatario: {toAddr}");
             }
             catch (Exception ex) when (ex is not InvalidOperationException)
             {
-                // Envolver excepciones de red/timeout con contexto
-                Console.WriteLine($"[SENDGRID] ❌ Excepción: {ex.Message}");
+                Console.WriteLine($"[SENDGRID] ❌ Excepción: {ex.GetType().Name}");
+                Console.WriteLine($"[SENDGRID] Message: {ex.Message}");
+                
                 throw new InvalidOperationException(
                     $"Error al comunicarse con SendGrid: {ex.Message}", ex);
             }
@@ -171,7 +214,6 @@ namespace Auth.Infrastructure.Services.Notifications
 
         /// <summary>
         /// Parsea dirección email en formato "Nombre <email@dominio>" o "email@dominio".
-        /// MEJORA FUTURA: Usar librería MailKit.MailboxAddress para mayor robustez.
         /// </summary>
         private static (string Email, string Name) ParseAddress(string raw)
         {
@@ -193,8 +235,6 @@ namespace Auth.Infrastructure.Services.Notifications
 
         /// <summary>
         /// Remueve tags HTML para generar versión texto plano.
-        /// LIMITACIÓN: Simplificado, no procesa HTML complejo correctamente.
-        /// MEJORA FUTURA: Usar HtmlAgilityPack para conversión robusta.
         /// </summary>
         private static string StripHtml(string html)
         {

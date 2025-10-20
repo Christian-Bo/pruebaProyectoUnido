@@ -41,13 +41,10 @@ builder.Services.AddDbContext<AppDbContext>(opts =>
     var cs = builder.Configuration.GetConnectionString("Default")!;
     opts.UseMySql(cs, ServerVersion.AutoDetect(cs), mysqlOpts =>
     {
-        // Mejora: Reintentos automáticos en caso de fallo transitorio
         mysqlOpts.EnableRetryOnFailure(maxRetryCount: 3, maxRetryDelay: TimeSpan.FromSeconds(5), null);
-        // Mejora: Timeout de comando más corto para detectar problemas rápido
         mysqlOpts.CommandTimeout(20);
     });
     
-    // IMPORTANTE: Solo en desarrollo - no rastrear entidades innecesarias
     if (builder.Environment.IsDevelopment())
     {
         opts.EnableSensitiveDataLogging();
@@ -55,7 +52,7 @@ builder.Services.AddDbContext<AppDbContext>(opts =>
     }
 });
 
-// ===== JWT: Sin cambios, ya está óptimo =====
+// ===== JWT =====
 builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection("Jwt"));
 var key = Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"]!);
 
@@ -82,7 +79,7 @@ builder.Services.AddAuthentication(o =>
 
 builder.Services.AddAuthorization();
 
-// ===== CORS: Más explícito y seguro =====
+// ===== CORS =====
 builder.Services.AddCors(opt =>
 {
     opt.AddPolicy("dev", p => p
@@ -92,7 +89,6 @@ builder.Services.AddCors(opt =>
             {
                 var host = new Uri(origin).Host;
                 
-                // Lista blanca explícita (mejora: mover a config para flexibilidad)
                 var allowedHosts = new[]
                 {
                     "front-end-automatas.vercel.app",
@@ -103,7 +99,6 @@ builder.Services.AddCors(opt =>
                 if (allowedHosts.Any(h => host.Equals(h, StringComparison.OrdinalIgnoreCase)))
                     return true;
                     
-                // Permitir subdomnios de Vercel
                 if (host.EndsWith(".vercel.app", StringComparison.OrdinalIgnoreCase))
                     return true;
                 
@@ -113,50 +108,34 @@ builder.Services.AddCors(opt =>
         })
         .AllowAnyHeader()
         .AllowAnyMethod()
-        .AllowCredentials() // Mejora: permitir cookies si se necesitan en el futuro
+        .AllowCredentials()
     );
 });
 
 // ===== SERVICIOS BASE =====
 builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
-
-builder.Services.Configure<EmailOptions>(builder.Configuration.GetSection("Email"));
 builder.Services.Configure<FacialOptions>(builder.Configuration.GetSection("FaceLogin"));
 
-// ===== NOTIFICACIONES: Selección inteligente de proveedor =====
+// ===== SENDGRID (ÚNICO PROVEEDOR DE EMAIL) =====
 var sendGridApiKey = builder.Configuration["SendGrid:ApiKey"]
                      ?? Environment.GetEnvironmentVariable("SENDGRID_API_KEY");
 
-// HttpClient para SendGrid con configuración robusta
-builder.Services.AddHttpClient("sendgrid", c =>
+if (string.IsNullOrWhiteSpace(sendGridApiKey))
 {
-    // CRÍTICO: Timeout agresivo para evitar cuelgues en Railway
-    c.Timeout = TimeSpan.FromSeconds(10);
-    c.DefaultRequestHeaders.Accept.Clear();
-    c.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-    c.DefaultRequestHeaders.UserAgent.ParseAdd("AuthAPI/1.0");
-})
-.ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
-{
-    // Mejora: Configuración avanzada de conexiones
-    PooledConnectionLifetime = TimeSpan.FromMinutes(2),
-    PooledConnectionIdleTimeout = TimeSpan.FromMinutes(1),
-    MaxConnectionsPerServer = 10
-});
-
-if (!string.IsNullOrWhiteSpace(sendGridApiKey))
-{
-    Console.WriteLine("[MAIL] Provider = SendGrid (Production)");
-    builder.Services.AddScoped<INotificationService, SendGridEmailNotificationService>();
+    Console.WriteLine("⚠️ [MAIL] ADVERTENCIA: SendGrid API Key no configurada.");
+    Console.WriteLine("   Configura SENDGRID_API_KEY en Railway o SendGrid:ApiKey en appsettings.json");
+    Console.WriteLine("   Los emails NO se enviarán hasta que se configure.");
 }
 else
 {
-    Console.WriteLine("[MAIL] Provider = SMTP (Development/Local)");
-    builder.Services.AddScoped<INotificationService, SmtpEmailNotificationService>();
+    Console.WriteLine("✅ [MAIL] SendGrid configurado correctamente");
 }
 
-// ===== COLA DE EMAILS: Sistema robusto de background processing =====
+// Siempre usar SendGrid (única opción)
+builder.Services.AddScoped<INotificationService, SendGridEmailNotificationService>();
+
+// ===== COLA DE EMAILS =====
 builder.Services.AddSingleton<IEmailJobQueue, InMemoryEmailJobQueue>();
 builder.Services.AddHostedService<EmailDispatcherBackgroundService>();
 
@@ -166,7 +145,7 @@ builder.Services.AddScoped<IQrService, QrService>();
 builder.Services.AddScoped<IQrCardGenerator, QrCardGenerator>();
 builder.Services.AddControllers();
 
-// ===== SWAGGER: Configuración completa =====
+// ===== SWAGGER =====
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
@@ -195,7 +174,7 @@ builder.Services.AddSwaggerGen(c =>
     c.AddSecurityRequirement(new OpenApiSecurityRequirement { { jwtScheme, Array.Empty<string>() } });
 });
 
-// ===== HTTP CLIENT BIOMETRÍA: Con reintentos =====
+// ===== HTTP CLIENT BIOMETRÍA =====
 builder.Services.AddHttpClient<BiometricApiClient>((sp, c) =>
 {
     var cfg = sp.GetRequiredService<IConfiguration>();
@@ -218,21 +197,19 @@ builder.Services.AddHttpClient<BiometricApiClient>((sp, c) =>
 
 var app = builder.Build();
 
-// ===== FORWARDED HEADERS: FIX para Railway (soluciona "Unknown proxy") =====
+// ===== FORWARDED HEADERS: Railway fix =====
 app.UseForwardedHeaders(new ForwardedHeadersOptions
 {
     ForwardedHeaders = ForwardedHeaders.XForwardedProto | ForwardedHeaders.XForwardedFor,
-    // CRÍTICO: No validar IPs de proxy conocidas en Railway (son dinámicas)
-    KnownNetworks = { }, // Vacío = acepta cualquier proxy
-    KnownProxies = { }    // Vacío = acepta cualquier proxy
+    KnownNetworks = { },
+    KnownProxies = { }
 });
 
-// ===== EXCEPTION HANDLER: Con CORS incluido =====
+// ===== EXCEPTION HANDLER =====
 app.UseExceptionHandler(errorApp =>
 {
     errorApp.Run(async ctx =>
     {
-        // Aplicar CORS incluso en errores
         var origin = ctx.Request.Headers.Origin.ToString();
         if (!string.IsNullOrEmpty(origin))
         {
@@ -245,7 +222,6 @@ app.UseExceptionHandler(errorApp =>
         ctx.Response.StatusCode = StatusCodes.Status500InternalServerError;
         ctx.Response.ContentType = "application/json";
         
-        // Mejora: Log estructurado del error
         var logger = ctx.RequestServices.GetRequiredService<ILogger<Program>>();
         var error = ctx.Features.Get<Microsoft.AspNetCore.Diagnostics.IExceptionHandlerFeature>()?.Error;
         logger.LogError(error, "[GLOBAL-ERROR] Path={Path}", ctx.Request.Path);
@@ -257,17 +233,15 @@ app.UseExceptionHandler(errorApp =>
 app.UseSwagger();
 app.UseSwaggerUI();
 
-// ===== MIDDLEWARE PIPELINE: Orden crítico =====
 app.UseRouting();
 app.UseCors("dev");
 
-// CRÍTICO: Remover UseHttpsRedirection en Railway (maneja HTTPS en el proxy)
 if (!builder.Environment.IsProduction())
 {
     app.UseHttpsRedirection();
 }
 
-// Middleware defensivo para CORS en preflight
+// Middleware CORS para preflight
 app.Use(async (ctx, next) =>
 {
     var origin = ctx.Request.Headers.Origin.ToString();
@@ -294,7 +268,7 @@ app.Use(async (ctx, next) =>
 
 app.UseAuthentication();
 
-// ===== MIDDLEWARE DE REVOCACIÓN: Optimizado con cache =====
+// ===== MIDDLEWARE DE REVOCACIÓN =====
 app.Use(async (ctx, next) =>
 {
     var auth = ctx.Request.Headers.Authorization.ToString();
@@ -309,7 +283,6 @@ app.Use(async (ctx, next) =>
     var db = ctx.RequestServices.GetRequiredService<AppDbContext>();
     var hash = jwt.ComputeSha256(token);
     
-    // MEJORA: AsNoTracking para consultas read-only (más rápido)
     var activa = await db.Sesiones
         .AsNoTracking()
         .Where(s => s.SessionTokenHash == hash && s.Activa)
@@ -329,11 +302,10 @@ app.Use(async (ctx, next) =>
 app.UseAuthorization();
 app.MapControllers().RequireCors("dev");
 
-// OPTIONS handler global
 app.MapMethods("{*path}", new[] { "OPTIONS" }, () => Results.NoContent())
    .RequireCors("dev");
 
-// ===== HEALTH CHECK: Mejorado =====
+// ===== HEALTH CHECK =====
 app.MapGet("/health/db", async (AppDbContext db) =>
 {
     try
@@ -352,16 +324,9 @@ app.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = Dat
 app.Run();
 
 // =========================
-//  BACKGROUND SERVICE PARA EMAILS
+//  BACKGROUND SERVICE PARA EMAILS (SendGrid)
 // =========================
 
-/// <summary>
-/// Background service que procesa la cola de emails con reintentos exponenciales.
-/// MEJORA FUTURA: 
-/// - Agregar circuit breaker para fallos consecutivos
-/// - Implementar DLQ (Dead Letter Queue) para emails que fallan definitivamente
-/// - Métricas de observabilidad (Prometheus/Grafana)
-/// </summary>
 public class EmailDispatcherBackgroundService : BackgroundService
 {
     private readonly IServiceScopeFactory _scopeFactory;
@@ -380,12 +345,11 @@ public class EmailDispatcherBackgroundService : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("[MAIL-DISPATCH] Iniciado.");
+        _logger.LogInformation("[MAIL-DISPATCH] Iniciado con SendGrid");
         
         await foreach (var job in _queue.DequeueAsync(stoppingToken))
         {
-            // Política de reintentos: 3 intentos con backoff exponencial
-            var delays = new[] { 1000, 3000, 7000 }; // 1s, 3s, 7s
+            var delays = new[] { 1000, 3000, 7000 };
             var attempt = 0;
             
             for (;;)
@@ -395,9 +359,8 @@ public class EmailDispatcherBackgroundService : BackgroundService
                     using var scope = _scopeFactory.CreateScope();
                     var sender = scope.ServiceProvider.GetRequiredService<INotificationService>();
 
-                    // Timeout individual por intento (evita bloqueos)
                     using var cts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
-                    cts.CancelAfter(TimeSpan.FromSeconds(15));
+                    cts.CancelAfter(TimeSpan.FromSeconds(30)); // SendGrid más tiempo
 
                     await sender.SendEmailAsync(
                         job.To,
@@ -408,12 +371,12 @@ public class EmailDispatcherBackgroundService : BackgroundService
                         job.AttachmentContentType
                     );
 
-                    _logger.LogInformation("[MAIL-DISPATCH] ✅ Enviado -> {To}", job.To);
-                    break; // Éxito: salir del loop de reintentos
+                    _logger.LogInformation("[MAIL-DISPATCH] ✅ Enviado vía SendGrid -> {To}", job.To);
+                    break;
                 }
                 catch (OperationCanceledException)
                 {
-                    _logger.LogWarning("[MAIL-DISPATCH] ⏱️ Timeout -> {To} (intento {Attempt})", 
+                    _logger.LogWarning("[MAIL-DISPATCH] ⏱️ Timeout SendGrid -> {To} (intento {Attempt})", 
                         job.To, attempt + 1);
                     
                     if (attempt >= delays.Length - 1)
@@ -426,21 +389,20 @@ public class EmailDispatcherBackgroundService : BackgroundService
                 {
                     if (attempt >= delays.Length - 1)
                     {
-                        _logger.LogError(ex, "[MAIL-DISPATCH] ❌ FALLÓ DEFINITIVO -> {To}", job.To);
-                        // MEJORA FUTURA: Enviar a DLQ o notificar a administradores
+                        _logger.LogError(ex, "[MAIL-DISPATCH] ❌ FALLÓ DEFINITIVO (SendGrid) -> {To}", job.To);
                         break;
                     }
                     
                     var delay = delays[attempt++];
                     _logger.LogWarning(ex, 
-                        "[MAIL-DISPATCH] ⚠️ Error, reintentando en {Delay}ms -> {To}", 
+                        "[MAIL-DISPATCH] ⚠️ Error SendGrid, reintentando en {Delay}ms -> {To}", 
                         delay, job.To);
                     
                     try 
                     { 
                         await Task.Delay(delay, stoppingToken); 
                     } 
-                    catch { /* Cancelación del servicio */ }
+                    catch { }
                 }
             }
         }

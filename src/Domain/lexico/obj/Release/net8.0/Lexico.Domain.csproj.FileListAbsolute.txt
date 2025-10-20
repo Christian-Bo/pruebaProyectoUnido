@@ -1,0 +1,12 @@
+C:\Users\DELL\Desktop\Proyecto de Automatas\pruebaProyectoUnido\src\Domain\lexico\bin\Release\net8.0\Lexico.Domain.deps.json
+C:\Users\DELL\Desktop\Proyecto de Automatas\pruebaProyectoUnido\src\Domain\lexico\bin\Release\net8.0\Lexico.Domain.dll
+C:\Users\DELL\Desktop\Proyecto de Automatas\pruebaProyectoUnido\src\Domain\lexico\bin\Release\net8.0\Lexico.Domain.pdb
+C:\Users\DELL\Desktop\Proyecto de Automatas\pruebaProyectoUnido\src\Domain\lexico\obj\Release\net8.0\Lexico.Domain.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\DELL\Desktop\Proyecto de Automatas\pruebaProyectoUnido\src\Domain\lexico\obj\Release\net8.0\Lexico.Domain.AssemblyInfoInputs.cache
+C:\Users\DELL\Desktop\Proyecto de Automatas\pruebaProyectoUnido\src\Domain\lexico\obj\Release\net8.0\Lexico.Domain.AssemblyInfo.cs
+C:\Users\DELL\Desktop\Proyecto de Automatas\pruebaProyectoUnido\src\Domain\lexico\obj\Release\net8.0\Lexico.Domain.csproj.CoreCompileInputs.cache
+C:\Users\DELL\Desktop\Proyecto de Automatas\pruebaProyectoUnido\src\Domain\lexico\obj\Release\net8.0\Lexico.Domain.sourcelink.json
+C:\Users\DELL\Desktop\Proyecto de Automatas\pruebaProyectoUnido\src\Domain\lexico\obj\Release\net8.0\Lexico.Domain.dll
+C:\Users\DELL\Desktop\Proyecto de Automatas\pruebaProyectoUnido\src\Domain\lexico\obj\Release\net8.0\refint\Lexico.Domain.dll
+C:\Users\DELL\Desktop\Proyecto de Automatas\pruebaProyectoUnido\src\Domain\lexico\obj\Release\net8.0\Lexico.Domain.pdb
+C:\Users\DELL\Desktop\Proyecto de Automatas\pruebaProyectoUnido\src\Domain\lexico\obj\Release\net8.0\ref\Lexico.Domain.dll

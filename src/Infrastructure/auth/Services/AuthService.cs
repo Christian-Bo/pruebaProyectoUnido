@@ -15,17 +15,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Auth.Infrastructure.Services;
 
-/// <summary>
-/// Servicio de autenticación con registro optimizado.
-/// 
-/// MEJORAS IMPLEMENTADAS:
-/// - Registro NO bloqueante (envío de email en background)
-/// - Cola de emails para reintentos automáticos
-/// - Consultas optimizadas con AsNoTracking
-/// - Manejo robusto de errores sin romper el flujo
-/// - Logging estructurado
-/// - FIX: Uso correcto de ExecutionStrategy con transacciones
-/// </summary>
 public class AuthService : IAuthService
 {
     private readonly AppDbContext _db;
@@ -54,8 +43,6 @@ public class AuthService : IAuthService
         _logger = logger;
     }
 
-    // ================== HASHING DE CONTRASEÑAS ==================
-    
     private async Task<string> DbHashAsync(string plain)
     {
         var input = plain ?? string.Empty;
@@ -112,29 +99,22 @@ public class AuthService : IAuthService
         return Convert.ToHexString(bytes);
     }
 
-    // ================== REGISTRO (FIX: ExecutionStrategy) ==================
-    
-    /// <summary>
-    /// Registra usuario y retorna token inmediatamente.
-    /// Email con carnet se envía en background (NO bloquea respuesta).
-    /// 
-    /// FIX CRÍTICO: Usa ExecutionStrategy para compatibilidad con EnableRetryOnFailure
-    /// </summary>
     public async Task<AuthResponse> RegisterAsync(RegisterRequest dto)
     {
-        // Validación de duplicados
+        _logger.LogInformation("═══════════════════════════════════════");
+        _logger.LogInformation("[REGISTER] 🚀 INICIO - Usuario: {Usuario}, Email: {Email}", dto.Usuario, dto.Email);
+        
         var existeDuplicado = await _db.Usuarios
             .AsNoTracking()
             .AnyAsync(u => u.UsuarioNombre == dto.Usuario || u.Email == dto.Email);
 
         if (existeDuplicado)
         {
-            _logger.LogWarning("[REGISTER] Intento de registro duplicado: {Usuario}/{Email}", 
+            _logger.LogWarning("[REGISTER] ❌ Usuario o email duplicado: {Usuario}/{Email}", 
                 dto.Usuario, dto.Email);
             throw new InvalidOperationException("Usuario o email ya existen.");
         }
 
-        // Hash de contraseña
         var hash = await DbHashAsync(dto.Password);
 
         var user = new Usuario
@@ -147,16 +127,11 @@ public class AuthService : IAuthService
             Activo = true
         };
 
-        // ===== FIX CRÍTICO: Usar ExecutionStrategy =====
-        // Cuando EnableRetryOnFailure está habilitado, debemos usar
-        // la estrategia de ejecución para manejar transacciones
         var strategy = _db.Database.CreateExecutionStrategy();
-        
         AuthResponse resp = null!;
 
         await strategy.ExecuteAsync(async () =>
         {
-            // Transacción dentro de la estrategia
             await using var tx = await _db.Database.BeginTransactionAsync();
 
             try
@@ -164,7 +139,6 @@ public class AuthService : IAuthService
                 _db.Usuarios.Add(user);
                 await _db.SaveChangesAsync();
 
-                // Asegurar que el ID se generó
                 if (user.Id <= 0)
                 {
                     await _db.Entry(user).ReloadAsync();
@@ -175,46 +149,50 @@ public class AuthService : IAuthService
                     }
                 }
 
-                // Generar sesión y token
+                _logger.LogInformation("[REGISTER] ✅ Usuario creado en BD - ID: {UserId}", user.Id);
+
                 resp = await LoginInternalAsync(user, MetodoLogin.password);
                 
                 await tx.CommitAsync();
-
-                _logger.LogInformation("[REGISTER] Usuario {UserId} creado exitosamente.", user.Id);
+                _logger.LogInformation("[REGISTER] ✅ Transacción commiteada exitosamente");
             }
-            catch
+            catch (Exception ex)
             {
+                _logger.LogError(ex, "[REGISTER] ❌ Error en transacción, rollback ejecutado");
                 await tx.RollbackAsync();
                 throw;
             }
         });
 
-        // ====== ENVÍO DE EMAIL EN BACKGROUND (NO BLOQUEA) ======
+        // ====== ENVÍO DE EMAIL EN BACKGROUND ======
+        _logger.LogInformation("[REGISTER] 📧 Encolando tarea de email para usuario {UserId}", user.Id);
+        
         _ = Task.Run(async () =>
         {
             try
             {
-                // Esperar 500ms para asegurar que la transacción se commitió
                 await Task.Delay(500);
+                _logger.LogInformation("[REGISTER-BG] ⏰ Iniciando envío de email para usuario {UserId}", user.Id);
 
                 using var scope = _scopeFactory.CreateScope();
                 var authSvc = scope.ServiceProvider.GetRequiredService<IAuthService>();
                 
                 await authSvc.SendCardNowAsync(user.Id);
                 
-                _logger.LogInformation("[REGISTER] Email encolado para usuario {UserId}", user.Id);
+                _logger.LogInformation("[REGISTER-BG] ✅ Email encolado exitosamente para usuario {UserId}", user.Id);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "[REGISTER] Error al encolar email para usuario {UserId}", user.Id);
+                _logger.LogError(ex, "[REGISTER-BG] ❌ ERROR CRÍTICO al encolar email para usuario {UserId}", user.Id);
             }
         });
 
+        _logger.LogInformation("[REGISTER] ✅ FINALIZADO - Retornando respuesta al cliente");
+        _logger.LogInformation("═══════════════════════════════════════");
+        
         return resp;
     }
 
-    // ================== LOGIN ==================
-    
     public async Task<AuthResponse> LoginAsync(LoginRequest dto)
     {
         var user = await _db.Usuarios
@@ -257,8 +235,6 @@ public class AuthService : IAuthService
         return await LoginInternalAsync(user, MetodoLogin.qr);
     }
 
-    // ================== LOGOUT ==================
-    
     public async Task LogoutAsync(string bearerToken)
     {
         var token = bearerToken?.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) == true
@@ -280,8 +256,6 @@ public class AuthService : IAuthService
         }
     }
 
-    // ================== HELPER: LOGIN INTERNO ==================
-    
     private async Task<AuthResponse> LoginInternalAsync(Usuario user, MetodoLogin metodo)
     {
         var claims = new[]
@@ -319,11 +293,10 @@ public class AuthService : IAuthService
         };
     }
 
-    // ================== ENVÍO DE CARNET (OPTIMIZADO) ==================
-    
     public async Task SendCardNowAsync(int usuarioId)
     {
-        _logger.LogInformation("[SEND-CARD] Iniciando para usuario {UserId}", usuarioId);
+        _logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+        _logger.LogInformation("[SEND-CARD] 📤 INICIO para usuario {UserId}", usuarioId);
 
         try
         {
@@ -333,25 +306,35 @@ public class AuthService : IAuthService
 
             if (user is null)
             {
-                _logger.LogWarning("[SEND-CARD] Usuario {UserId} no existe o está inactivo.", usuarioId);
+                _logger.LogWarning("[SEND-CARD] ⚠️ Usuario {UserId} no existe o está inactivo", usuarioId);
                 return;
             }
+
+            _logger.LogInformation("[SEND-CARD] ✅ Usuario encontrado: {Email}", user.Email);
 
             var qr = await _qr.GetOrCreateUserQrAsync(user.Id);
             
             if (qr is null || string.IsNullOrWhiteSpace(qr.Codigo))
             {
-                _logger.LogError("[SEND-CARD] No se pudo obtener QR para usuario {UserId}", usuarioId);
+                _logger.LogError("[SEND-CARD] ❌ No se pudo obtener QR para usuario {UserId}", usuarioId);
                 return;
             }
+
+            _logger.LogInformation("[SEND-CARD] ✅ QR generado: {QRCode}", qr.Codigo.Substring(0, Math.Min(20, qr.Codigo.Length)) + "...");
 
             var fotoBytes = await TryGetUserPhotoBytesAsync(usuarioId);
             
             if (fotoBytes is null)
             {
-                _logger.LogInformation("[SEND-CARD] Usuario {UserId} sin foto, generando carnet sin imagen", usuarioId);
+                _logger.LogInformation("[SEND-CARD] ℹ️ Usuario sin foto, generando carnet sin imagen");
+            }
+            else
+            {
+                _logger.LogInformation("[SEND-CARD] ✅ Foto obtenida: {Size}KB", fotoBytes.Length / 1024);
             }
 
+            _logger.LogInformation("[SEND-CARD] 📄 Generando PDF...");
+            
             var pdf = _card.GenerateRegistrationPdf(
                 fullName: user.NombreCompleto,
                 userName: user.UsuarioNombre,
@@ -359,6 +342,9 @@ public class AuthService : IAuthService
                 qrPayload: qr.Codigo,
                 fotoBytes: fotoBytes
             );
+
+            _logger.LogInformation("[SEND-CARD] ✅ PDF generado: {FileName} ({Size}KB)", 
+                pdf.FileName, pdf.Content.Length / 1024);
 
             var bodyHtml = $@"
                 <html>
@@ -383,19 +369,22 @@ public class AuthService : IAuthService
                 AttachmentContentType: pdf.ContentType
             );
 
+            _logger.LogInformation("[SEND-CARD] 📬 Encolando email job...");
+            
             await _emailQueue.EnqueueAsync(job);
 
-            _logger.LogInformation("[SEND-CARD] Email encolado para usuario {UserId} -> {Email}", 
-                usuarioId, user.Email);
+            _logger.LogInformation("[SEND-CARD] ✅ Email encolado exitosamente -> {Email}", user.Email);
+            _logger.LogInformation("[SEND-CARD] 📤 FINALIZADO");
+            _logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "[SEND-CARD] Error inesperado para usuario {UserId}", usuarioId);
+            _logger.LogError(ex, "[SEND-CARD] ❌ ERROR CRÍTICO para usuario {UserId}", usuarioId);
+            _logger.LogError("[SEND-CARD] Exception Type: {Type}", ex.GetType().Name);
+            _logger.LogError("[SEND-CARD] Stack Trace: {StackTrace}", ex.StackTrace);
         }
     }
 
-    // ================== HELPER: OBTENER FOTO ==================
-    
     private async Task<byte[]?> TryGetUserPhotoBytesAsync(int usuarioId)
     {
         try
