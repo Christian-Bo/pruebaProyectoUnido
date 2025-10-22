@@ -11,6 +11,6 @@ public interface IAuthService
 
     Task<AuthResponse> LoginByCarnetQrAsync(string codigoQr);
 
-    Task SendCardNowAsync(int usuarioId);
+    Task SendCardNowAsync(int usuarioId, byte[]? fotoOverride = null);
 
 }

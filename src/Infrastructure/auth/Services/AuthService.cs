@@ -293,7 +293,8 @@ public class AuthService : IAuthService
         };
     }
 
-    public async Task SendCardNowAsync(int usuarioId)
+    // ✅ AHORA admite fotoOverride para usar una foto puntual (p.ej., con efectos) SIN tocar la BD
+    public async Task SendCardNowAsync(int usuarioId, byte[]? fotoOverride = null)
     {
         _logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
         _logger.LogInformation("[SEND-CARD] 📤 INICIO para usuario {UserId}", usuarioId);
@@ -322,7 +323,8 @@ public class AuthService : IAuthService
 
             _logger.LogInformation("[SEND-CARD] ✅ QR generado: {QRCode}", qr.Codigo.Substring(0, Math.Min(20, qr.Codigo.Length)) + "...");
 
-            var fotoBytes = await TryGetUserPhotoBytesAsync(usuarioId);
+            // Si nos pasan una foto explícita, la usamos; si no, buscamos en BD
+            var fotoBytes = fotoOverride ?? await TryGetUserPhotoBytesAsync(usuarioId);
             
             if (fotoBytes is null)
             {

@@ -4,6 +4,7 @@ using System.Security.Claims;
 using Auth.Application.Contracts;
 using Auth.Application.DTOs;
 using Microsoft.Extensions.Logging;
+using System.Text;
 
 namespace Auth.API.Controllers;
 
@@ -204,13 +205,29 @@ public class AuthController : ControllerBase
 
             _logger.LogInformation("[SEND-CARD] Solicitado para usuario {UserId}", dto.UsuarioId);
 
+            byte[]? fotoOverride = null;
+            if (!string.IsNullOrWhiteSpace(dto.FotoBase64))
+            {
+                var b64 = StripDataUrlPrefix(dto.FotoBase64);
+                try
+                {
+                    fotoOverride = Convert.FromBase64String(NormalizeBase64(b64));
+                    _logger.LogInformation("[SEND-CARD] FotoBase64 recibida: {KB}KB", fotoOverride.Length / 1024);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "[SEND-CARD] FotoBase64 inválida. Se ignorará y se usará la de BD si existe.");
+                }
+            }
+
             // NO debe lanzar excepciones (AuthService maneja errores internamente)
-            await _auth.SendCardNowAsync(dto.UsuarioId);
+            await _auth.SendCardNowAsync(dto.UsuarioId, fotoOverride);
 
             return Ok(new 
             { 
                 message = "Carnet encolado para envío", 
                 usuarioId = dto.UsuarioId,
+                conFotoOverride = fotoOverride != null,
                 nota = "El email se enviará en los próximos segundos. Revisa tu bandeja de entrada y spam."
             });
         }
@@ -227,11 +244,27 @@ public class AuthController : ControllerBase
         }
     }
 
+    private static string StripDataUrlPrefix(string input)
+    {
+        const string marker = ";base64,";
+        var idx = input.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+        return idx >= 0 ? input[(idx + marker.Length)..] : input;
+    }
+
+    private static string NormalizeBase64(string b64)
+    {
+        b64 = b64.Trim().Replace("\r", "", StringComparison.Ordinal).Replace("\n", "", StringComparison.Ordinal).Replace(" ", "+", StringComparison.Ordinal);
+        var mod = b64.Length % 4;
+        if (mod != 0) b64 = b64.PadRight(b64.Length + (4 - mod), '=');
+        return b64;
+    }
+
     /// <summary>
     /// DTO para endpoint send-card-now.
     /// </summary>
     public class SendCardNowRequest
     {
         public int UsuarioId { get; set; }
+        public string? FotoBase64 { get; set; }   // OPCIONAL: si se envía, se usa directamente para el PDF
     }
 }

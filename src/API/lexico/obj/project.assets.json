@@ -649,46 +649,38 @@
     ]
   },
   "packageFolders": {
-    "C:\\Users\\DELL\\.nuget\\packages\\": {},
-    "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages": {}
+    "C:\\Users\\Christian\\.nuget\\packages\\": {}
   },
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "C:\\Users\\DELL\\Desktop\\Proyecto de Automatas\\pruebaProyectoUnido\\src\\API\\lexico\\Lexico.API.csproj",
+      "projectUniqueName": "C:\\Users\\Christian\\Desktop\\pruebaProyectoUnido\\src\\API\\lexico\\Lexico.API.csproj",
       "projectName": "Lexico.API",
-      "projectPath": "C:\\Users\\DELL\\Desktop\\Proyecto de Automatas\\pruebaProyectoUnido\\src\\API\\lexico\\Lexico.API.csproj",
-      "packagesPath": "C:\\Users\\DELL\\.nuget\\packages\\",
-      "outputPath": "C:\\Users\\DELL\\Desktop\\Proyecto de Automatas\\pruebaProyectoUnido\\src\\API\\lexico\\obj\\",
+      "projectPath": "C:\\Users\\Christian\\Desktop\\pruebaProyectoUnido\\src\\API\\lexico\\Lexico.API.csproj",
+      "packagesPath": "C:\\Users\\Christian\\.nuget\\packages\\",
+      "outputPath": "C:\\Users\\Christian\\Desktop\\pruebaProyectoUnido\\src\\API\\lexico\\obj\\",
       "projectStyle": "PackageReference",
-      "fallbackFolders": [
-        "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
-      ],
       "configFilePaths": [
-        "C:\\Users\\DELL\\AppData\\Roaming\\NuGet\\NuGet.Config",
-        "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.FallbackLocation.config",
-        "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
+        "C:\\Users\\Christian\\AppData\\Roaming\\NuGet\\NuGet.Config"
       ],
       "originalTargetFrameworks": [
         "net8.0"
       ],
       "sources": {
-        "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
-        "C:\\Program Files\\dotnet\\library-packs": {},
         "https://api.nuget.org/v3/index.json": {}
       },
       "frameworks": {
         "net8.0": {
           "targetAlias": "net8.0",
           "projectReferences": {
-            "C:\\Users\\DELL\\Desktop\\Proyecto de Automatas\\pruebaProyectoUnido\\src\\Application\\lexico\\Lexico.Application.csproj": {
-              "projectPath": "C:\\Users\\DELL\\Desktop\\Proyecto de Automatas\\pruebaProyectoUnido\\src\\Application\\lexico\\Lexico.Application.csproj"
+            "C:\\Users\\Christian\\Desktop\\pruebaProyectoUnido\\src\\Application\\lexico\\Lexico.Application.csproj": {
+              "projectPath": "C:\\Users\\Christian\\Desktop\\pruebaProyectoUnido\\src\\Application\\lexico\\Lexico.Application.csproj"
             },
-            "C:\\Users\\DELL\\Desktop\\Proyecto de Automatas\\pruebaProyectoUnido\\src\\Domain\\lexico\\Lexico.Domain.csproj": {
-              "projectPath": "C:\\Users\\DELL\\Desktop\\Proyecto de Automatas\\pruebaProyectoUnido\\src\\Domain\\lexico\\Lexico.Domain.csproj"
+            "C:\\Users\\Christian\\Desktop\\pruebaProyectoUnido\\src\\Domain\\lexico\\Lexico.Domain.csproj": {
+              "projectPath": "C:\\Users\\Christian\\Desktop\\pruebaProyectoUnido\\src\\Domain\\lexico\\Lexico.Domain.csproj"
             },
-            "C:\\Users\\DELL\\Desktop\\Proyecto de Automatas\\pruebaProyectoUnido\\src\\Infrastructure\\lexico\\Lexico.Infrastructure.csproj": {
-              "projectPath": "C:\\Users\\DELL\\Desktop\\Proyecto de Automatas\\pruebaProyectoUnido\\src\\Infrastructure\\lexico\\Lexico.Infrastructure.csproj"
+            "C:\\Users\\Christian\\Desktop\\pruebaProyectoUnido\\src\\Infrastructure\\lexico\\Lexico.Infrastructure.csproj": {
+              "projectPath": "C:\\Users\\Christian\\Desktop\\pruebaProyectoUnido\\src\\Infrastructure\\lexico\\Lexico.Infrastructure.csproj"
             }
           }
         }

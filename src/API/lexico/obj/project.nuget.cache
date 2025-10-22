@@ -1,22 +1,22 @@
 {
   "version": 2,
-  "dgSpecHash": "S0Qe/Ih1YXc=",
+  "dgSpecHash": "iU7jEzokpOc=",
   "success": true,
-  "projectFilePath": "C:\\Users\\DELL\\Desktop\\Proyecto de Automatas\\pruebaProyectoUnido\\src\\API\\lexico\\Lexico.API.csproj",
+  "projectFilePath": "C:\\Users\\Christian\\Desktop\\pruebaProyectoUnido\\src\\API\\lexico\\Lexico.API.csproj",
   "expectedPackageFiles": [
-    "C:\\Users\\DELL\\.nuget\\packages\\dapper\\2.1.66\\dapper.2.1.66.nupkg.sha512",
-    "C:\\Users\\DELL\\.nuget\\packages\\microsoft.aspnetcore.openapi\\8.0.20\\microsoft.aspnetcore.openapi.8.0.20.nupkg.sha512",
-    "C:\\Users\\DELL\\.nuget\\packages\\microsoft.extensions.apidescription.server\\8.0.0\\microsoft.extensions.apidescription.server.8.0.0.nupkg.sha512",
-    "C:\\Users\\DELL\\.nuget\\packages\\microsoft.extensions.configuration.abstractions\\9.0.9\\microsoft.extensions.configuration.abstractions.9.0.9.nupkg.sha512",
-    "C:\\Users\\DELL\\.nuget\\packages\\microsoft.extensions.dependencyinjection.abstractions\\8.0.2\\microsoft.extensions.dependencyinjection.abstractions.8.0.2.nupkg.sha512",
-    "C:\\Users\\DELL\\.nuget\\packages\\microsoft.extensions.logging.abstractions\\8.0.2\\microsoft.extensions.logging.abstractions.8.0.2.nupkg.sha512",
-    "C:\\Users\\DELL\\.nuget\\packages\\microsoft.extensions.primitives\\9.0.9\\microsoft.extensions.primitives.9.0.9.nupkg.sha512",
-    "C:\\Users\\DELL\\.nuget\\packages\\microsoft.openapi\\1.6.25\\microsoft.openapi.1.6.25.nupkg.sha512",
-    "C:\\Users\\DELL\\.nuget\\packages\\mysqlconnector\\2.4.0\\mysqlconnector.2.4.0.nupkg.sha512",
-    "C:\\Users\\DELL\\.nuget\\packages\\swashbuckle.aspnetcore\\9.0.5\\swashbuckle.aspnetcore.9.0.5.nupkg.sha512",
-    "C:\\Users\\DELL\\.nuget\\packages\\swashbuckle.aspnetcore.swagger\\9.0.5\\swashbuckle.aspnetcore.swagger.9.0.5.nupkg.sha512",
-    "C:\\Users\\DELL\\.nuget\\packages\\swashbuckle.aspnetcore.swaggergen\\9.0.5\\swashbuckle.aspnetcore.swaggergen.9.0.5.nupkg.sha512",
-    "C:\\Users\\DELL\\.nuget\\packages\\swashbuckle.aspnetcore.swaggerui\\9.0.5\\swashbuckle.aspnetcore.swaggerui.9.0.5.nupkg.sha512"
+    "C:\\Users\\Christian\\.nuget\\packages\\dapper\\2.1.66\\dapper.2.1.66.nupkg.sha512",
+    "C:\\Users\\Christian\\.nuget\\packages\\microsoft.aspnetcore.openapi\\8.0.20\\microsoft.aspnetcore.openapi.8.0.20.nupkg.sha512",
+    "C:\\Users\\Christian\\.nuget\\packages\\microsoft.extensions.apidescription.server\\8.0.0\\microsoft.extensions.apidescription.server.8.0.0.nupkg.sha512",
+    "C:\\Users\\Christian\\.nuget\\packages\\microsoft.extensions.configuration.abstractions\\9.0.9\\microsoft.extensions.configuration.abstractions.9.0.9.nupkg.sha512",
+    "C:\\Users\\Christian\\.nuget\\packages\\microsoft.extensions.dependencyinjection.abstractions\\8.0.2\\microsoft.extensions.dependencyinjection.abstractions.8.0.2.nupkg.sha512",
+    "C:\\Users\\Christian\\.nuget\\packages\\microsoft.extensions.logging.abstractions\\8.0.2\\microsoft.extensions.logging.abstractions.8.0.2.nupkg.sha512",
+    "C:\\Users\\Christian\\.nuget\\packages\\microsoft.extensions.primitives\\9.0.9\\microsoft.extensions.primitives.9.0.9.nupkg.sha512",
+    "C:\\Users\\Christian\\.nuget\\packages\\microsoft.openapi\\1.6.25\\microsoft.openapi.1.6.25.nupkg.sha512",
+    "C:\\Users\\Christian\\.nuget\\packages\\mysqlconnector\\2.4.0\\mysqlconnector.2.4.0.nupkg.sha512",
+    "C:\\Users\\Christian\\.nuget\\packages\\swashbuckle.aspnetcore\\9.0.5\\swashbuckle.aspnetcore.9.0.5.nupkg.sha512",
+    "C:\\Users\\Christian\\.nuget\\packages\\swashbuckle.aspnetcore.swagger\\9.0.5\\swashbuckle.aspnetcore.swagger.9.0.5.nupkg.sha512",
+    "C:\\Users\\Christian\\.nuget\\packages\\swashbuckle.aspnetcore.swaggergen\\9.0.5\\swashbuckle.aspnetcore.swaggergen.9.0.5.nupkg.sha512",
+    "C:\\Users\\Christian\\.nuget\\packages\\swashbuckle.aspnetcore.swaggerui\\9.0.5\\swashbuckle.aspnetcore.swaggerui.9.0.5.nupkg.sha512"
   ],
   "logs": []
 }
